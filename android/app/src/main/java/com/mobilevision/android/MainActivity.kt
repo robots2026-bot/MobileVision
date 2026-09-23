@@ -28,6 +28,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -116,8 +118,9 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
                 if (cameraError.isNotEmpty()) Text(cameraError, color = MaterialTheme.colorScheme.error, maxLines = 2)
                 Text("待传 " + pending + " · 已传 " + sent + if (failed > 0) " · 需处理 " + failed else "", modifier = Modifier.testTag("queue-summary").padding(bottom = 4.dp), style = MaterialTheme.typography.bodySmall)
             if (state.session != null && !scan && !history) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(modifier = Modifier.weight(1f).height(52.dp).testTag("capture"), enabled = permission && capture != null && !state.capturing && !state.pairing, onClick = {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    OutlinedIconButton(modifier = Modifier.size(52.dp).testTag("import-gallery").semantics { contentDescription = "导入相册" }, enabled = !state.capturing && !state.pairing, onClick = { galleryLauncher.launch("image/*") }) { GalleryImportIcon() }
+                    Surface(modifier = Modifier.size(80.dp).testTag("capture").semantics { contentDescription = "拍照" }, shape = androidx.compose.foundation.shape.CircleShape, color = MaterialTheme.colorScheme.primary, enabled = permission && capture != null && !state.capturing && !state.pairing, onClick = {
                         val camera = capture
                         if (camera != null) vm.beginCapture { id, file ->
                             camera.targetRotation = (context as? ComponentActivity)?.window?.decorView?.display?.rotation ?: 0
@@ -128,9 +131,8 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
                                 })
                             } catch (error: Exception) { vm.captureFinished(id, error.message ?: "相机拍摄失败") }
                         }
-                    }) { Text(if (state.capturing) "正在保存…" else "拍照") }
-                    OutlinedButton(modifier = Modifier.testTag("import-gallery"), enabled = !state.capturing && !state.pairing, onClick = { galleryLauncher.launch("image/*") }) { Text("导入相册") }
-                    OutlinedButton(enabled = !state.capturing, onClick = { front = !front; cameraError = "" }) { Text("切换镜头") }
+                    }) { Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) { if (state.capturing) CircularProgressIndicator(Modifier.size(34.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 3.dp) else ShutterIcon() } }
+                    OutlinedIconButton(modifier = Modifier.size(52.dp).testTag("switch-camera").semantics { contentDescription = "切换镜头" }, enabled = !state.capturing, onClick = { front = !front; cameraError = "" }) { SwitchCameraIcon() }
                 }
             }
 
@@ -200,6 +202,45 @@ private fun LocalPhoto(id: String, modifier: Modifier) {
         }
     }
     bitmap?.let { Image(it.asImageBitmap(), "本地拍摄照片", modifier) }
+}
+
+@Composable
+private fun GalleryImportIcon() {
+    val color = androidx.compose.material3.LocalContentColor.current
+    androidx.compose.foundation.Canvas(Modifier.size(28.dp)) {
+        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
+        drawRoundRect(color, topLeft = androidx.compose.ui.geometry.Offset(2.dp.toPx(), 5.dp.toPx()), size = androidx.compose.ui.geometry.Size(20.dp.toPx(), 17.dp.toPx()), cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()), style = stroke)
+        drawCircle(color, 2.dp.toPx(), androidx.compose.ui.geometry.Offset(8.dp.toPx(), 10.dp.toPx()))
+        val path = androidx.compose.ui.graphics.Path().apply { moveTo(4.dp.toPx(), 20.dp.toPx()); lineTo(10.dp.toPx(), 14.dp.toPx()); lineTo(14.dp.toPx(), 18.dp.toPx()); lineTo(18.dp.toPx(), 13.dp.toPx()); lineTo(22.dp.toPx(), 17.dp.toPx()) }
+        drawPath(path, color, style = stroke)
+        drawLine(color, androidx.compose.ui.geometry.Offset(23.dp.toPx(), 2.dp.toPx()), androidx.compose.ui.geometry.Offset(23.dp.toPx(), 10.dp.toPx()), strokeWidth = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        drawLine(color, androidx.compose.ui.geometry.Offset(19.dp.toPx(), 6.dp.toPx()), androidx.compose.ui.geometry.Offset(23.dp.toPx(), 10.dp.toPx()), strokeWidth = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        drawLine(color, androidx.compose.ui.geometry.Offset(27.dp.toPx(), 6.dp.toPx()), androidx.compose.ui.geometry.Offset(23.dp.toPx(), 10.dp.toPx()), strokeWidth = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+    }
+}
+
+@Composable
+private fun ShutterIcon() {
+    val color = MaterialTheme.colorScheme.onPrimary
+    androidx.compose.foundation.Canvas(Modifier.size(48.dp)) {
+        drawCircle(color, radius = 19.dp.toPx(), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx()))
+        drawCircle(color, radius = 13.dp.toPx())
+    }
+}
+
+@Composable
+private fun SwitchCameraIcon() {
+    val color = androidx.compose.material3.LocalContentColor.current
+    androidx.compose.foundation.Canvas(Modifier.size(30.dp)) {
+        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
+        drawRoundRect(color, topLeft = androidx.compose.ui.geometry.Offset(6.dp.toPx(), 9.dp.toPx()), size = androidx.compose.ui.geometry.Size(18.dp.toPx(), 14.dp.toPx()), cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()), style = stroke)
+        drawCircle(color, radius = 4.dp.toPx(), center = androidx.compose.ui.geometry.Offset(15.dp.toPx(), 16.dp.toPx()), style = stroke)
+        drawLine(color, androidx.compose.ui.geometry.Offset(11.dp.toPx(), 9.dp.toPx()), androidx.compose.ui.geometry.Offset(13.dp.toPx(), 6.dp.toPx()), strokeWidth = 2.dp.toPx())
+        drawLine(color, androidx.compose.ui.geometry.Offset(13.dp.toPx(), 6.dp.toPx()), androidx.compose.ui.geometry.Offset(18.dp.toPx(), 6.dp.toPx()), strokeWidth = 2.dp.toPx())
+        drawArc(color, 205f, 100f, false, topLeft = androidx.compose.ui.geometry.Offset(1.dp.toPx(), 1.dp.toPx()), size = androidx.compose.ui.geometry.Size(28.dp.toPx(), 28.dp.toPx()), style = stroke)
+        drawLine(color, androidx.compose.ui.geometry.Offset(3.dp.toPx(), 12.dp.toPx()), androidx.compose.ui.geometry.Offset(2.dp.toPx(), 5.dp.toPx()), strokeWidth = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        drawLine(color, androidx.compose.ui.geometry.Offset(2.dp.toPx(), 5.dp.toPx()), androidx.compose.ui.geometry.Offset(9.dp.toPx(), 6.dp.toPx()), strokeWidth = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+    }
 }
 
 @Composable

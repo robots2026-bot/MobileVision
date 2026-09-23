@@ -97,6 +97,9 @@ class EndToEndTest {
         compose.onNodeWithTag("tab-camera").assertIsSelected()
         compose.onNodeWithTag("capture").assertIsDisplayed()
         compose.onNodeWithTag("import-gallery").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithContentDescription("导入相册").assertIsDisplayed()
+        compose.onNodeWithContentDescription("拍照").assertIsDisplayed()
+        compose.onNodeWithContentDescription("切换镜头").assertIsDisplayed()
         val photo = photos().first()
         PhotoStore(context).use { store -> ReceiverApi(session.address, session.fingerprint).upload(session, photo.id, store.file(photo.id), photo.capturedAt, photo.hash) }
         val report = org.json.JSONArray()

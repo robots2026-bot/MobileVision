@@ -21,6 +21,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import org.json.JSONArray
@@ -55,34 +57,74 @@ class WritingDocument(private val file: File) {
 @Composable
 fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, onSync: (Bitmap) -> Unit) {
     var color by remember { mutableLongStateOf(0xff171717) }
-    var width by remember { mutableFloatStateOf(7f) }
+    var widthLevel by remember { mutableFloatStateOf(4f) }
     var eraser by remember { mutableStateOf(false) }
     var active by remember { mutableStateOf<InkStroke?>(null) }
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var confirmClear by remember { mutableStateOf(false) }
+    var chooseColor by remember { mutableStateOf(false) }
+    var chooseWidth by remember { mutableStateOf(false) }
+    val width = widthLevel * 2f
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-            FilterChip(selected = !eraser, onClick = { eraser = false }, label = { Text("画笔") })
-            FilterChip(selected = eraser, onClick = { eraser = true }, label = { Text("橡皮") })
-            TextButton(onClick = document::undo, enabled = document.strokes.isNotEmpty(), modifier = Modifier.testTag("writing-undo")) { Text("撤销") }
-            TextButton(onClick = document::redo, enabled = document.undone.isNotEmpty()) { Text("重做") }
-            TextButton(onClick = { confirmClear = true }, enabled = document.strokes.isNotEmpty()) { Text("新建") }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            listOf(0xff171717L, 0xffd42a2aL, 0xff245eeaL).forEach { choice ->
-                Surface(onClick = { color = choice; eraser = false }, modifier = Modifier.size(34.dp).then(if (color == choice && !eraser) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, CircleShape) else Modifier), shape = CircleShape, color = Color(choice)) {}
-            }
-            listOf(4f, 7f, 12f).forEach { choice -> FilterChip(selected = width == choice, onClick = { width = choice }, label = { Text(when (choice) { 4f -> "细"; 7f -> "中"; else -> "粗" }) }) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            WritingToolButton("画笔", ToolIcon.Pen, selected = !eraser, onClick = { eraser = false })
+            WritingToolButton("橡皮", ToolIcon.Eraser, selected = eraser, onClick = { eraser = true })
+            WritingToolButton("颜色", ToolIcon.Color, tint = Color(color), onClick = { chooseColor = true })
+            WritingToolButton("粗细 ${widthLevel.toInt()} 级", ToolIcon.Width, lineWidth = widthLevel, onClick = { chooseWidth = true })
+            WritingToolButton("撤销", ToolIcon.Undo, enabled = document.strokes.isNotEmpty(), modifier = Modifier.testTag("writing-undo"), onClick = document::undo)
+            WritingToolButton("重做", ToolIcon.Redo, enabled = document.undone.isNotEmpty(), onClick = document::redo)
+            WritingToolButton("新建", ToolIcon.New, enabled = document.strokes.isNotEmpty(), onClick = { confirmClear = true })
+            WritingToolButton(if (busy) "正在同步" else "同步到电脑", ToolIcon.Sync, enabled = connected && !busy && document.strokes.isNotEmpty() && canvasSize.width > 0, modifier = Modifier.testTag("writing-sync"), busy = busy, onClick = { onSync(renderWriting(document.strokes.toList(), canvasSize)) })
         }
         Box(Modifier.fillMaxWidth().weight(1f).background(Color.White).border(1.dp, MaterialTheme.colorScheme.outlineVariant).onSizeChanged { canvasSize = it }.pointerInput(color, width, eraser) {
             detectDragGestures(onDragStart = { point -> active = InkStroke(listOf(InkPoint(point.x, point.y)), color, width, eraser) }, onDrag = { change, _ -> change.consume(); active = active?.let { it.copy(points = it.points + InkPoint(change.position.x, change.position.y)) } }, onDragEnd = { active?.let(document::add); active = null }, onDragCancel = { active = null })
         }.testTag("writing-canvas")) {
             Canvas(Modifier.fillMaxSize()) { (document.strokes + listOfNotNull(active)).forEach { stroke -> drawInk(stroke) } }
         }
-        Button(onClick = { onSync(renderWriting(document.strokes.toList(), canvasSize)) }, enabled = connected && !busy && document.strokes.isNotEmpty() && canvasSize.width > 0, modifier = Modifier.fillMaxWidth().height(48.dp).testTag("writing-sync")) { Text(if (busy) "正在同步…" else "同步到电脑") }
-        Text(if (!connected) "连接电脑后可以同步；草稿已自动保存在手机" else "草稿自动保存 · 点击同步发送当前画面", style = MaterialTheme.typography.bodySmall)
+        Text(if (!connected) "连接电脑后可以同步；草稿已自动保存在手机" else "草稿自动保存 · 工具栏最右侧同步", style = MaterialTheme.typography.bodySmall)
     }
     if (confirmClear) AlertDialog(onDismissRequest = { confirmClear = false }, title = { Text("新建空白页？") }, text = { Text("当前草稿会被清空；已经同步到电脑的图片不受影响。") }, confirmButton = { TextButton(onClick = { document.clear(); confirmClear = false }) { Text("新建") } }, dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } })
+    if (chooseWidth) AlertDialog(onDismissRequest = { chooseWidth = false }, title = { Text("画笔粗细：${widthLevel.toInt()} 级") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Canvas(Modifier.fillMaxWidth().height(36.dp)) { drawLine(Color(color), Offset(12.dp.toPx(), center.y), Offset(size.width - 12.dp.toPx(), center.y), strokeWidth = widthLevel * 2f, cap = StrokeCap.Round) }
+            Slider(value = widthLevel, onValueChange = { widthLevel = it }, valueRange = 1f..10f, steps = 8, modifier = Modifier.testTag("writing-width-slider"))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("1 级"); Text("10 级") }
+        }
+    }, confirmButton = { TextButton(onClick = { chooseWidth = false }) { Text("完成") } })
+    if (chooseColor) AlertDialog(onDismissRequest = { chooseColor = false }, title = { Text("选择画笔颜色") }, text = {
+        val colors = listOf(0xff171717L, 0xffd42a2aL, 0xff245eeaL, 0xff18864bL, 0xffff8a00L, 0xff7a3fc1L, 0xff8b5a2bL, 0xff6b7280L)
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { colors.chunked(4).forEach { row -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { row.forEach { choice -> Surface(onClick = { color = choice; eraser = false; chooseColor = false }, modifier = Modifier.size(52.dp).then(if (color == choice) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, CircleShape) else Modifier).semantics { contentDescription = "选择颜色" }, shape = CircleShape, color = Color(choice)) {} } } } }
+    }, confirmButton = { TextButton(onClick = { chooseColor = false }) { Text("取消") } })
+}
+
+private enum class ToolIcon { Pen, Eraser, Color, Width, Undo, Redo, New, Sync }
+
+@Composable
+private fun WritingToolButton(description: String, icon: ToolIcon, modifier: Modifier = Modifier, enabled: Boolean = true, selected: Boolean = false, tint: Color? = null, lineWidth: Float = 4f, busy: Boolean = false, onClick: () -> Unit) {
+    val decorated = modifier.size(44.dp).semantics { contentDescription = description }
+    val resolvedTint = tint ?: LocalContentColor.current
+    val content: @Composable () -> Unit = { if (busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) else WritingToolIcon(icon, resolvedTint, lineWidth) }
+    if (selected) FilledTonalIconButton(onClick = onClick, modifier = decorated, enabled = enabled, content = content) else IconButton(onClick = onClick, modifier = decorated, enabled = enabled, content = content)
+}
+
+@Composable
+private fun WritingToolIcon(icon: ToolIcon, tint: Color, lineWidth: Float) {
+    val foreground = if (icon == ToolIcon.Color) tint else LocalContentColor.current
+    val outline = MaterialTheme.colorScheme.outline
+    Canvas(Modifier.size(26.dp)) {
+        val unit = size.minDimension / 26f
+        val stroke = Stroke(2f * unit, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        fun point(x: Float, y: Float) = Offset(x * unit, y * unit)
+        when (icon) {
+            ToolIcon.Pen -> { drawLine(foreground, point(5f, 21f), point(20f, 6f), 3f * unit, StrokeCap.Round); drawLine(foreground, point(4f, 22f), point(9f, 20f), 2f * unit) }
+            ToolIcon.Eraser -> { val path = Path().apply { moveTo(5f * unit, 17f * unit); lineTo(15f * unit, 7f * unit); lineTo(22f * unit, 14f * unit); lineTo(12f * unit, 24f * unit); close() }; drawPath(path, foreground, style = stroke); drawLine(foreground, point(9f, 13f), point(16f, 20f), 2f * unit) }
+            ToolIcon.Color -> { drawCircle(foreground, 8f * unit, center); drawCircle(outline, 9f * unit, center, style = Stroke(1.5f * unit)) }
+            ToolIcon.Width -> drawLine(foreground, point(3f, 13f), point(23f, 13f), lineWidth.coerceIn(1f, 10f) * 0.8f * unit, StrokeCap.Round)
+            ToolIcon.Undo, ToolIcon.Redo -> { val mirror = if (icon == ToolIcon.Undo) 1f else -1f; drawArc(foreground, if (mirror > 0) 205f else -25f, 230f, false, point(5f, 5f), androidx.compose.ui.geometry.Size(16f * unit, 16f * unit), style = stroke); val x = if (mirror > 0) 4f else 22f; drawLine(foreground, point(x, 13f), point(x, 6f), 2f * unit); drawLine(foreground, point(x, 6f), point(x + 6f * mirror, 7f), 2f * unit) }
+            ToolIcon.New -> { drawRoundRect(foreground, point(5f, 3f), androidx.compose.ui.geometry.Size(16f * unit, 20f * unit), androidx.compose.ui.geometry.CornerRadius(2f * unit), style = stroke); drawLine(foreground, point(9f, 13f), point(17f, 13f), 2f * unit); drawLine(foreground, point(13f, 9f), point(13f, 17f), 2f * unit) }
+            ToolIcon.Sync -> { drawRoundRect(foreground, point(3f, 5f), androidx.compose.ui.geometry.Size(20f * unit, 15f * unit), androidx.compose.ui.geometry.CornerRadius(2f * unit), style = stroke); drawLine(foreground, point(13f, 16f), point(13f, 8f), 2f * unit); drawLine(foreground, point(9f, 12f), point(13f, 8f), 2f * unit); drawLine(foreground, point(17f, 12f), point(13f, 8f), 2f * unit); drawLine(foreground, point(9f, 23f), point(17f, 23f), 2f * unit) }
+        }
+    }
 }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawInk(stroke: InkStroke) {

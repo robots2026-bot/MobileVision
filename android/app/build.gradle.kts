@@ -27,6 +27,11 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
 }
+
+android.applicationVariants.all {
+    val artifactName = "MobileVision-Android-${versionName}-${buildType.name}.apk"
+    outputs.all { (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName = artifactName }
+}
 dependencies {
     implementation("androidx.camera:camera-camera2:1.4.2")
     implementation("androidx.camera:camera-lifecycle:1.4.2")

@@ -41,7 +41,7 @@ Debug 应用 APK、仪器测试 APK 构建成功，6 项 JVM 单元测试通过�
 
 - [Windows 安装包](windows/release/MobileVision%20Setup%200.1.0.exe)
 - [Windows 程序](windows/release/win-unpacked/MobileVision.exe)（须保留整个目录）
-- [Android APK](android/app/build/outputs/apk/debug/app-debug.apk)
+- [Android APK](android/app/build/outputs/apk/debug/MobileVision-Android-0.2.0-debug.apk)
 
 ## 拍摄界面调整
 

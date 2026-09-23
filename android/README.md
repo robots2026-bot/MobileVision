@@ -55,7 +55,7 @@ New-Item -ItemType Directory -Path '.gradle/sockets' -Force | Out-Null
 $env:JAVA_TOOL_OPTIONS = '-Djdk.net.unixdomain.tmpdir=C:/Users/FamilyWang/code/MobileVision/android/.gradle/sockets'
 ```
 
-APK：app/build/outputs/apk/debug/app-debug.apk。测试 APK：app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk。
+APK：app/build/outputs/apk/debug/MobileVision-Android-0.2.0-debug.apk。测试 APK：app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk。
 
 完整跨端测试：启动 emulator-5554，安装两个 APK，然后在 windows 文件夹执行 npm.cmd run test:android。此命令会重置指定模拟器内 MobileVision 的测试数据，不应用于存有需要保留照片的模拟器。测试不会操作真实手机。
 

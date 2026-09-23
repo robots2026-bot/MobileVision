@@ -107,11 +107,10 @@ class EndToEndTest {
         listOf("画笔", "橡皮", "颜色", "粗细 4 级", "撤销", "重做", "新建", "同步到电脑").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed() }
         compose.onNodeWithContentDescription("颜色").performClick()
         compose.onAllNodesWithContentDescription("选择颜色").assertCountEquals(8)
-        compose.onNodeWithText("取消").performClick()
+        compose.onAllNodesWithContentDescription("选择颜色")[0].performClick()
         compose.onNodeWithContentDescription("粗细 4 级").performClick()
         compose.onNodeWithTag("writing-width-slider").assertIsDisplayed()
-        compose.onNodeWithText("1 级").assertIsDisplayed(); compose.onNodeWithText("16 级（约 1 cm）").assertIsDisplayed()
-        compose.onNodeWithText("完成").performClick()
+        compose.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
         compose.onAllNodesWithTag("capture").assertCountEquals(0)
         compose.onNodeWithTag("tab-camera").performClick()
         val photo = photos().first()

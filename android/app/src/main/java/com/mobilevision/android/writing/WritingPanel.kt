@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -70,8 +71,7 @@ fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, o
     val displayMetrics = LocalContext.current.resources.displayMetrics
     val minimumWidth = with(density) { 1.5.dp.toPx() }
     val maximumWidth = displayMetrics.xdpi / 2.54f
-    val width = minimumWidth + (maximumWidth - minimumWidth) * (widthLevel - 1f) / 15f
-    val eraserOutline = MaterialTheme.colorScheme.outline
+    val width = minimumWidth + (maximumWidth - minimumWidth) * (widthLevel - 1f) / 31f
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             WritingToolButton("画笔", ToolIcon.Pen, selected = !eraser, onClick = { eraser = false })
@@ -90,26 +90,34 @@ fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, o
                 (document.strokes + listOfNotNull(active)).forEach { stroke -> drawInk(stroke) }
                 active?.takeIf { it.eraser }?.let { stroke -> stroke.points.lastOrNull()?.let { point ->
                     val center = Offset(point.x, point.y); val radius = stroke.width / 2f
-                    drawCircle(Color.Black.copy(alpha = 0.18f), radius + 5.dp.toPx(), center + Offset(2.dp.toPx(), 3.dp.toPx()))
-                    drawCircle(Color.White.copy(alpha = 0.82f), radius, center)
-                    drawCircle(eraserOutline.copy(alpha = 0.85f), radius, center, style = Stroke(1.5.dp.toPx()))
+                    drawCircle(Color.Black.copy(alpha = 0.16f), radius, center)
                 } }
             }
         }
         Text(if (!connected) "连接电脑后可以同步；草稿已自动保存在手机" else "草稿自动保存 · 工具栏最右侧同步", style = MaterialTheme.typography.bodySmall)
     }
     if (confirmClear) AlertDialog(onDismissRequest = { confirmClear = false }, title = { Text("新建空白页？") }, text = { Text("当前草稿会被清空；已经同步到电脑的图片不受影响。") }, confirmButton = { TextButton(onClick = { document.clear(); confirmClear = false }) { Text("新建") } }, dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } })
-    if (chooseWidth) AlertDialog(onDismissRequest = { chooseWidth = false }, title = { Text("画笔粗细：${widthLevel.toInt()} 级") }, text = {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Canvas(Modifier.fillMaxWidth().height(64.dp)) { drawLine(Color(color), Offset(12.dp.toPx(), center.y), Offset(size.width - 12.dp.toPx(), center.y), strokeWidth = width, cap = StrokeCap.Round) }
-            Slider(value = widthLevel, onValueChange = { widthLevel = it }, valueRange = 1f..16f, steps = 14, modifier = Modifier.testTag("writing-width-slider"))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("1 级"); Text("16 级（约 1 cm）") }
+    if (chooseWidth) Dialog(onDismissRequest = { chooseWidth = false }) {
+        Surface(shape = MaterialTheme.shapes.large, tonalElevation = 6.dp) {
+            Row(Modifier.width(300.dp).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Canvas(Modifier.size(48.dp)) { drawCircle(Color(color), radius = (width / 2f).coerceAtMost(size.minDimension / 2f)) }
+                Slider(value = widthLevel, onValueChange = { widthLevel = it }, valueRange = 1f..32f, steps = 30, modifier = Modifier.weight(1f).testTag("writing-width-slider"))
+            }
         }
-    }, confirmButton = { TextButton(onClick = { chooseWidth = false }) { Text("完成") } })
-    if (chooseColor) AlertDialog(onDismissRequest = { chooseColor = false }, title = { Text("选择画笔颜色") }, text = {
+    }
+    if (chooseColor) Dialog(onDismissRequest = { chooseColor = false }) {
         val colors = listOf(0xff171717L, 0xffd42a2aL, 0xff245eeaL, 0xff18864bL, 0xffff8a00L, 0xff7a3fc1L, 0xff8b5a2bL, 0xff6b7280L)
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { colors.chunked(4).forEach { row -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { row.forEach { choice -> Surface(onClick = { color = choice; eraser = false; chooseColor = false }, modifier = Modifier.size(52.dp).then(if (color == choice) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, CircleShape) else Modifier).semantics { contentDescription = "选择颜色" }, shape = CircleShape, color = Color(choice)) {} } } } }
-    }, confirmButton = { TextButton(onClick = { chooseColor = false }) { Text("取消") } })
+        Surface(shape = MaterialTheme.shapes.large, tonalElevation = 6.dp) {
+            Column(Modifier.width(210.dp).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("选择画笔颜色", style = MaterialTheme.typography.titleMedium)
+                colors.chunked(4).forEach { row -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { row.forEach { choice ->
+                    Surface(onClick = { color = choice; eraser = false; chooseColor = false }, modifier = Modifier.size(36.dp).semantics { contentDescription = "选择颜色" }, shape = CircleShape, color = Color.Transparent) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Box(Modifier.size(18.dp).background(Color(choice), CircleShape).then(if (color == choice) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape) else Modifier)) }
+                    }
+                } } }
+            }
+        }
+    }
 }
 
 private enum class ToolIcon { Pen, Eraser, Color, Width, Undo, Redo, New, Sync }
@@ -133,8 +141,8 @@ private fun WritingToolIcon(icon: ToolIcon, tint: Color, lineWidth: Float) {
         when (icon) {
             ToolIcon.Pen -> { drawLine(foreground, point(5f, 21f), point(20f, 6f), 3f * unit, StrokeCap.Round); drawLine(foreground, point(4f, 22f), point(9f, 20f), 2f * unit) }
             ToolIcon.Eraser -> { val path = Path().apply { moveTo(5f * unit, 17f * unit); lineTo(15f * unit, 7f * unit); lineTo(22f * unit, 14f * unit); lineTo(12f * unit, 24f * unit); close() }; drawPath(path, foreground, style = stroke); drawLine(foreground, point(9f, 13f), point(16f, 20f), 2f * unit) }
-            ToolIcon.Color -> { drawCircle(foreground, 8f * unit, center); drawCircle(outline, 9f * unit, center, style = Stroke(1.5f * unit)) }
-            ToolIcon.Width -> drawLine(foreground, point(3f, 13f), point(23f, 13f), lineWidth.coerceIn(1f, 16f) * 0.55f * unit, StrokeCap.Round)
+            ToolIcon.Color -> { drawCircle(foreground, 2.7f * unit, center); drawCircle(outline, 3.7f * unit, center, style = Stroke(1.2f * unit)) }
+            ToolIcon.Width -> drawLine(foreground, point(3f, 13f), point(23f, 13f), lineWidth.coerceIn(1f, 32f) * 0.28f * unit, StrokeCap.Round)
             ToolIcon.Undo, ToolIcon.Redo -> { val mirror = if (icon == ToolIcon.Undo) 1f else -1f; drawArc(foreground, if (mirror > 0) 205f else -25f, 230f, false, point(5f, 5f), androidx.compose.ui.geometry.Size(16f * unit, 16f * unit), style = stroke); val x = if (mirror > 0) 4f else 22f; drawLine(foreground, point(x, 13f), point(x, 6f), 2f * unit); drawLine(foreground, point(x, 6f), point(x + 6f * mirror, 7f), 2f * unit) }
             ToolIcon.New -> { drawRoundRect(foreground, point(5f, 3f), androidx.compose.ui.geometry.Size(16f * unit, 20f * unit), androidx.compose.ui.geometry.CornerRadius(2f * unit), style = stroke); drawLine(foreground, point(9f, 13f), point(17f, 13f), 2f * unit); drawLine(foreground, point(13f, 9f), point(13f, 17f), 2f * unit) }
             ToolIcon.Sync -> { drawRoundRect(foreground, point(3f, 5f), androidx.compose.ui.geometry.Size(20f * unit, 15f * unit), androidx.compose.ui.geometry.CornerRadius(2f * unit), style = stroke); drawLine(foreground, point(13f, 16f), point(13f, 8f), 2f * unit); drawLine(foreground, point(9f, 12f), point(13f, 8f), 2f * unit); drawLine(foreground, point(17f, 12f), point(13f, 8f), 2f * unit); drawLine(foreground, point(9f, 23f), point(17f, 23f), 2f * unit) }

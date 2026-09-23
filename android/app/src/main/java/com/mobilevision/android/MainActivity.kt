@@ -63,6 +63,7 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
     var selectedPhoto by remember { mutableStateOf<String?>(null) }
     var pendingPair by remember { mutableStateOf<String?>(null) }; var confirmation by remember { mutableStateOf("") }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { permission = it; cameraError = if (it) "" else "需要相机权限才能扫码和拍照" }
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let(vm::importPhoto) }
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycle) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
@@ -128,6 +129,7 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
                             } catch (error: Exception) { vm.captureFinished(id, error.message ?: "相机拍摄失败") }
                         }
                     }) { Text(if (state.capturing) "正在保存…" else "拍照") }
+                    OutlinedButton(modifier = Modifier.testTag("import-gallery"), enabled = !state.capturing && !state.pairing, onClick = { galleryLauncher.launch("image/*") }) { Text("导入相册") }
                     OutlinedButton(enabled = !state.capturing, onClick = { front = !front; cameraError = "" }) { Text("切换镜头") }
                 }
             }

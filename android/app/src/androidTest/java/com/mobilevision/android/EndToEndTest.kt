@@ -96,6 +96,7 @@ class EndToEndTest {
         compose.onNodeWithTag("tab-camera").performClick()
         compose.onNodeWithTag("tab-camera").assertIsSelected()
         compose.onNodeWithTag("capture").assertIsDisplayed()
+        compose.onNodeWithTag("import-gallery").assertIsDisplayed().assertIsEnabled()
         val photo = photos().first()
         PhotoStore(context).use { store -> ReceiverApi(session.address, session.fingerprint).upload(session, photo.id, store.file(photo.id), photo.capturedAt, photo.hash) }
         val report = org.json.JSONArray()

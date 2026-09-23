@@ -110,7 +110,7 @@ class EndToEndTest {
         compose.onNodeWithText("取消").performClick()
         compose.onNodeWithContentDescription("粗细 4 级").performClick()
         compose.onNodeWithTag("writing-width-slider").assertIsDisplayed()
-        compose.onNodeWithText("1 级").assertIsDisplayed(); compose.onNodeWithText("10 级").assertIsDisplayed()
+        compose.onNodeWithText("1 级").assertIsDisplayed(); compose.onNodeWithText("16 级（约 1 cm）").assertIsDisplayed()
         compose.onNodeWithText("完成").performClick()
         compose.onAllNodesWithTag("capture").assertCountEquals(0)
         compose.onNodeWithTag("tab-camera").performClick()

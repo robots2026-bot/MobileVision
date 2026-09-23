@@ -15,7 +15,7 @@ export function call(receiver: Receiver, method: string, endpoint: string, body?
     req.setTimeout(10_000, () => req.destroy(new Error('Test request timeout'))); req.on('error', reject); req.end(body);
   });
 }
-export function photoHeaders(credential: string, image: Buffer) { return { Authorization: `Bearer ${credential}`, 'Content-Type': 'image/jpeg', 'X-Content-Sha256': createHash('sha256').update(image).digest('hex'), 'X-Captured-At': new Date().toISOString() }; }
+export function photoHeaders(credential: string, image: Buffer, contentType = 'image/jpeg') { return { Authorization: `Bearer ${credential}`, 'Content-Type': contentType, 'X-Content-Sha256': createHash('sha256').update(image).digest('hex'), 'X-Captured-At': new Date().toISOString() }; }
 export async function samplePhoto() {
   return sharp(Buffer.from('<svg width="1200" height="800" xmlns="http://www.w3.org/2000/svg"><rect width="1200" height="800" fill="#dbe9e5"/><circle cx="950" cy="160" r="84" fill="#fff0bc"/><path d="M0 580L330 190L660 580L890 310L1200 680V800H0" fill="#648f84"/><path d="M0 710L390 480L780 710L1200 520V800H0" fill="#315f5c"/><text x="70" y="110" font-size="36" font-family="Arial" fill="#315f5c">MobileVision / Test photo</text></svg>')).jpeg({ quality: 90 }).toBuffer();
 }

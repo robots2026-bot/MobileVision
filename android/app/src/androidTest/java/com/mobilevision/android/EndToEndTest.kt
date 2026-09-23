@@ -100,6 +100,12 @@ class EndToEndTest {
         compose.onNodeWithContentDescription("导入相册").assertIsDisplayed()
         compose.onNodeWithContentDescription("拍照").assertIsDisplayed()
         compose.onNodeWithContentDescription("切换镜头").assertIsDisplayed()
+        compose.onNodeWithTag("tab-writing").performClick()
+        compose.onNodeWithTag("tab-writing").assertIsSelected()
+        compose.onNodeWithTag("writing-canvas").assertIsDisplayed()
+        compose.onNodeWithTag("writing-sync").assertIsDisplayed().assertIsNotEnabled()
+        compose.onAllNodesWithTag("capture").assertCountEquals(0)
+        compose.onNodeWithTag("tab-camera").performClick()
         val photo = photos().first()
         PhotoStore(context).use { store -> ReceiverApi(session.address, session.fingerprint).upload(session, photo.id, store.file(photo.id), photo.capturedAt, photo.hash) }
         val report = org.json.JSONArray()

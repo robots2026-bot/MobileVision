@@ -151,7 +151,7 @@ export class Receiver extends EventEmitter {
         const file = await readFile(candidate);
         if (file.length !== row.bytes || digest(file) !== row.hash) throw new Error('Incomplete file');
         const metadata = await sharp(candidate, { limitInputPixels: 60_000_000, failOn: 'warning' }).metadata();
-        if (metadata.format !== 'jpeg' || !metadata.width || !metadata.height) throw new Error('Invalid JPEG');
+        if (!['jpeg', 'png'].includes(metadata.format || '') || !metadata.width || !metadata.height) throw new Error('Invalid image');
         await sharp(candidate, { limitInputPixels: 60_000_000, failOn: 'warning' }).rotate().resize(240).jpeg().toBuffer();
         const [width, height] = metadata.orientation && metadata.orientation >= 5 ? [metadata.height, metadata.width] : [metadata.width, metadata.height];
         if (candidate === row.temporary) await rename(row.temporary, row.filepath);
@@ -210,7 +210,9 @@ export class Receiver extends EventEmitter {
   private async upload(req: IncomingMessage, res: ServerResponse, device: Device, photoId: string, existing?: Row) {
     const bytes = Number(req.headers['content-length']); const hash = req.headers['x-content-sha256'];
     const capturedAt = req.headers['x-captured-at'];
-    if (req.headers['content-type'] !== 'image/jpeg') throw new ApiError(415, 'JPEG_REQUIRED');
+    const contentType = req.headers['content-type'];
+    if (contentType !== 'image/jpeg' && contentType !== 'image/png') throw new ApiError(415, 'IMAGE_TYPE_REQUIRED');
+    const expectedFormat = contentType === 'image/png' ? 'png' : 'jpeg';
     if (!Number.isSafeInteger(bytes) || bytes <= 0) throw new ApiError(400, 'CONTENT_LENGTH_REQUIRED');
     if (bytes > MAX_BYTES) throw new ApiError(413, 'FILE_TOO_LARGE');
     if (typeof hash !== 'string' || !/^[0-9a-f]{64}$/.test(hash)) throw new ApiError(400, 'INVALID_HASH');
@@ -223,7 +225,7 @@ export class Receiver extends EventEmitter {
     }
     const id = randomUUID(); const receivedAt = new Date().toISOString();
     const folder = path.join(this.directory, receivedAt.slice(0, 10)); await mkdir(folder, { recursive: true });
-    const filename = `${receivedAt.slice(11, 23).replaceAll(':', '-')}_${id}.jpg`;
+    const filename = `${receivedAt.slice(11, 23).replaceAll(':', '-')}_${id}.${expectedFormat === 'png' ? 'png' : 'jpg'}`;
     const filepath = path.join(folder, filename); const temporary = `${filepath}.part`;
     let committed = false; let journaled = false;
     try {
@@ -236,7 +238,7 @@ export class Receiver extends EventEmitter {
       let width: number; let height: number;
       try {
         const metadata = await sharp(temporary, { limitInputPixels: 60_000_000, failOn: 'warning' }).metadata();
-        if (metadata.format !== 'jpeg' || !metadata.width || !metadata.height) throw new Error('Invalid JPEG');
+        if (metadata.format !== expectedFormat || !metadata.width || !metadata.height) throw new Error('Invalid image');
         await sharp(temporary, { limitInputPixels: 60_000_000, failOn: 'warning' }).rotate().resize(240).jpeg().toBuffer();
         [width, height] = metadata.orientation && metadata.orientation >= 5 ? [metadata.height, metadata.width] : [metadata.width, metadata.height];
       } catch { throw new ApiError(422, 'INVALID_IMAGE'); }

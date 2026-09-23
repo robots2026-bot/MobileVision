@@ -75,7 +75,7 @@ if (single) app.whenReady().then(async () => {
   handler('revoke', async () => { const result = await dialog.showMessageBox(win!, { type: 'question', message: '解除手机配对？', detail: '解除后，手机需要重新扫码才能继续上传。已接收的照片会保留。', buttons: ['取消', '解除配对'], defaultId: 0, cancelId: 0 }); if (result.response === 1) receiver!.revoke(); });
   handler('open-directory', async () => { const error = await shell.openPath(receiver!.directory); if (error) throw new Error(error); });
   handler('reveal-photo', (id: unknown) => { if (typeof id !== 'string') throw new Error('无效照片'); const filename = receiver!.photoPath(id); if (!filename) throw new Error('照片不存在'); shell.showItemInFolder(filename); });
-  win = new BrowserWindow({ width: 1260, height: 850, minWidth: 1000, minHeight: 700, show: !testing, backgroundColor: '#f4f6f9', title: 'MobileVision · 手机拍照助手', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  win = new BrowserWindow({ width: 1260, height: 850, minWidth: 1000, minHeight: 700, show: !testing, backgroundColor: '#f4f6f9', title: 'MobileVision · 手机图片助手', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', event => event.preventDefault());
   win.on('closed', () => { win = undefined; });

@@ -36,6 +36,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mobilevision.android.camera.CameraPanel
 import com.mobilevision.android.network.Pairing
 import com.mobilevision.android.ui.theme.MobileVisionTheme
+import com.mobilevision.android.writing.WritingDocument
+import com.mobilevision.android.writing.WritingPanel
 
 class MainActivity : ComponentActivity() {
     private var model: PhotoViewModel? = null
@@ -57,6 +59,8 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
     var connectionDetails by remember { mutableStateOf(false) }
     var historyPage by remember { mutableIntStateOf(0) }
     var history by remember { mutableStateOf(false) }
+    var writing by remember { mutableStateOf(false) }
+    val writingDocument = remember { WritingDocument(java.io.File(context.filesDir, "writing-draft.json")) }
     var scan by remember { mutableStateOf(false) }; var front by remember { mutableStateOf(false) }
     var previewRatio by remember { mutableFloatStateOf(3f / 4f) }
     var capture by remember { mutableStateOf<ImageCapture?>(null) }
@@ -85,8 +89,9 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
     Scaffold(modifier = Modifier.fillMaxSize(), bottomBar = {
         Surface(shadowElevation = 6.dp) { Column {
             NavigationBar {
-                NavigationBarItem(selected = !history, onClick = { history = false }, enabled = !state.capturing, icon = { PageIcon(false) }, label = { Text("拍摄") }, modifier = Modifier.testTag("tab-camera"))
-                NavigationBarItem(selected = history, onClick = { history = true; scan = false }, enabled = !state.capturing, icon = { PageIcon(true) }, label = { Text("照片记录") }, modifier = Modifier.testTag("tab-history"))
+                NavigationBarItem(selected = !history && !writing, onClick = { history = false; writing = false }, enabled = !state.capturing, icon = { PageIcon(false) }, label = { Text("拍摄") }, modifier = Modifier.testTag("tab-camera"))
+                NavigationBarItem(selected = writing, onClick = { writing = true; history = false; scan = false }, enabled = !state.capturing, icon = { WritingIcon() }, label = { Text("书写") }, modifier = Modifier.testTag("tab-writing"))
+                NavigationBarItem(selected = history, onClick = { history = true; writing = false; scan = false }, enabled = !state.capturing, icon = { PageIcon(true) }, label = { Text("照片记录") }, modifier = Modifier.testTag("tab-history"))
             }
         } }
     }) { padding ->
@@ -98,7 +103,9 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
                     Text("  设置 ›", style = MaterialTheme.typography.labelLarge)
                 }
             }
-            if (!history) {
+            if (writing) {
+                WritingPanel(writingDocument, state.capturing, state.session != null, vm::syncWriting)
+            } else if (!history) {
                 if ((state.session != null || scan) && permission) {
                     BoxWithConstraints(Modifier.fillMaxWidth().weight(1f, fill = false), contentAlignment = androidx.compose.ui.Alignment.TopCenter) {
                         val width = minOf(maxWidth, maxHeight * previewRatio)
@@ -169,7 +176,7 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(state.session?.name ?: "请打开 Windows 端，显示配对二维码")
             Text(state.message, modifier = Modifier.testTag("status"))
-            Button(onClick = { connectionDetails = false; history = false; cameraError = ""; scan = true; if (!permission) permissionLauncher.launch(Manifest.permission.CAMERA) }, enabled = state.ready && !state.pairing && !state.capturing) { Text(if (state.session == null) "扫描二维码" else "扫码更新地址") }
+            Button(onClick = { connectionDetails = false; history = false; writing = false; cameraError = ""; scan = true; if (!permission) permissionLauncher.launch(Manifest.permission.CAMERA) }, enabled = state.ready && !state.pairing && !state.capturing) { Text(if (state.session == null) "扫描二维码" else "扫码更新地址") }
             OutlinedButton(onClick = { connectionDetails = false; paste = true }, enabled = state.ready && !state.pairing && !state.capturing) { Text("粘贴配对信息") }
             if (state.session != null) {
                 TextButton(onClick = { vm.retry() }, enabled = !state.pairing) { Text("重新连接 / 重试") }
@@ -251,5 +258,16 @@ private fun PageIcon(history: Boolean) {
             drawCircle(color, radius = 4.dp.toPx(), center = androidx.compose.ui.geometry.Offset(12.dp.toPx(), 13.dp.toPx()), style = stroke)
             drawLine(color, androidx.compose.ui.geometry.Offset(8.dp.toPx(), 3.dp.toPx()), androidx.compose.ui.geometry.Offset(16.dp.toPx(), 3.dp.toPx()), strokeWidth = 2.dp.toPx())
         }
+    }
+}
+
+@Composable
+private fun WritingIcon() {
+    val color = androidx.compose.material3.LocalContentColor.current
+    androidx.compose.foundation.Canvas(Modifier.size(24.dp)) {
+        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
+        val path = androidx.compose.ui.graphics.Path().apply { moveTo(4.dp.toPx(), 20.dp.toPx()); lineTo(8.dp.toPx(), 19.dp.toPx()); lineTo(20.dp.toPx(), 7.dp.toPx()); lineTo(17.dp.toPx(), 4.dp.toPx()); lineTo(5.dp.toPx(), 16.dp.toPx()); close() }
+        drawPath(path, color, style = stroke)
+        drawLine(color, androidx.compose.ui.geometry.Offset(14.dp.toPx(), 7.dp.toPx()), androidx.compose.ui.geometry.Offset(17.dp.toPx(), 10.dp.toPx()), strokeWidth = 2.dp.toPx())
     }
 }

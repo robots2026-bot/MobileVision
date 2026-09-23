@@ -3,6 +3,7 @@ package com.mobilevision.android
 import android.app.Application
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -140,6 +141,30 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
             } finally { mutable.value = mutable.value.copy(capturing = false) }
         }
     }
+    fun syncWriting(bitmap: Bitmap) {
+        if (mutable.value.capturing) { bitmap.recycle(); return }
+        mutable.value = mutable.value.copy(capturing = true)
+        worker.execute {
+            var id: String? = null
+            try {
+                val target = session ?: throw IllegalStateException("请先连接电脑")
+                id = UUID.randomUUID().toString()
+                store.create(id, target.computerId, Instant.now().toString())
+                val temporary = store.temporary(id)
+                FileOutputStream(temporary).use { output ->
+                    if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) throw IOException("无法生成书写图片")
+                    output.fd.sync()
+                }
+                if (!validPhoto(temporary)) throw IOException("书写图片生成失败")
+                check(temporary.renameTo(store.file(id))) { "无法保存书写图片" }
+                store.update(id, "pending", hash = fileHash(store.file(id)))
+                publish("书写图片已保存，等待电脑确认")
+            } catch (error: Exception) {
+                id?.let { photoId -> store.temporary(photoId).delete(); store.update(photoId, "capture_failed", error = "书写同步未完成，请重试") }
+                publish(userMessage(error))
+            } finally { bitmap.recycle(); mutable.value = mutable.value.copy(capturing = false) }
+        }
+    }
     private fun convertToJpeg(file: File) {
         val bitmap = ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
@@ -159,7 +184,7 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
     private fun validPhoto(file: File): Boolean {
         if (!file.exists() || file.length() !in 1..50L * 1024 * 1024) return false
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }; BitmapFactory.decodeFile(file.path, options)
-        return options.outMimeType == "image/jpeg" && options.outWidth > 0 && options.outHeight > 0 && options.outWidth.toLong() * options.outHeight <= 60_000_000
+        return options.outMimeType in setOf("image/jpeg", "image/png") && options.outWidth > 0 && options.outHeight > 0 && options.outWidth.toLong() * options.outHeight <= 60_000_000
     }
     private fun recoverPairing() {
         if (session != null) return

@@ -26,7 +26,7 @@
 
 ## PUT /api/v1/photos/{photoId}
 
-photoId 必须为 UUID，每张照片生成一次，重试保持不变。JPEG 字节作为请求体，携带：
+photoId 必须为 UUID，每张图片生成一次，重试保持不变。JPEG 或 PNG 字节作为请求体，携带：
 
 | 请求头 | 内容 |
 | --- | --- |
@@ -64,7 +64,7 @@ photoId 必须为 UUID，每张照片生成一次，重试保持不变。JPEG �
 | 409 | PHOTO_ID_CONFLICT / SAVED_FILE_CHANGED | 提示用户，不覆盖已有文件 |
 | 410 | PAIRING_EXPIRED | 刷新二维码 |
 | 413 | FILE_TOO_LARGE | 超出限制，保留本地原图并提示 |
-| 415 | JPEG_REQUIRED | 发送 JPEG 原文件 |
+| 415 | IMAGE_TYPE_REQUIRED | 发送 JPEG 或 PNG 原文件 |
 | 422 | CHECKSUM_MISMATCH / INVALID_IMAGE | 检查本地文件，停止无效重试 |
 | 429 | TOO_MANY_ATTEMPTS | 等待后重新连接 |
 | 500 | DISK_FULL / DIRECTORY_UNAVAILABLE / INTERNAL_ERROR | 保留照片，电脑端处理后再试 |
@@ -74,7 +74,7 @@ photoId 必须为 UUID，每张照片生成一次，重试保持不变。JPEG �
 
 ## 存储一致性
 
-上传开始前建立 pending 记录，写入目标目录内的 .part 文件；校验哈希和 JPEG 解码后重命名，再提交 ready 状态并确认。启动时验证未完成记录，恢复完整文件、清理未完成临时文件。完整原图与 UI 缩略图分开存储。
+上传开始前建立 pending 记录，写入目标目录内的 .part 文件；校验哈希和 JPEG/PNG 解码后重命名，再提交 ready 状态并确认。启动时验证未完成记录，恢复完整文件、清理未完成临时文件。完整原图与 UI 缩略图分开存储。
 
 电脑端原文件如果被外部移动或修改，历史记录可能仍显示；重传相同 ID 不会静默覆盖。首版没有自动扫描外部文件变更或修复历史记录功能。
 

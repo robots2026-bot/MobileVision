@@ -213,9 +213,6 @@ private fun GalleryImportIcon() {
         drawCircle(color, 2.dp.toPx(), androidx.compose.ui.geometry.Offset(8.dp.toPx(), 10.dp.toPx()))
         val path = androidx.compose.ui.graphics.Path().apply { moveTo(4.dp.toPx(), 20.dp.toPx()); lineTo(10.dp.toPx(), 14.dp.toPx()); lineTo(14.dp.toPx(), 18.dp.toPx()); lineTo(18.dp.toPx(), 13.dp.toPx()); lineTo(22.dp.toPx(), 17.dp.toPx()) }
         drawPath(path, color, style = stroke)
-        drawLine(color, androidx.compose.ui.geometry.Offset(23.dp.toPx(), 2.dp.toPx()), androidx.compose.ui.geometry.Offset(23.dp.toPx(), 10.dp.toPx()), strokeWidth = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
-        drawLine(color, androidx.compose.ui.geometry.Offset(19.dp.toPx(), 6.dp.toPx()), androidx.compose.ui.geometry.Offset(23.dp.toPx(), 10.dp.toPx()), strokeWidth = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
-        drawLine(color, androidx.compose.ui.geometry.Offset(27.dp.toPx(), 6.dp.toPx()), androidx.compose.ui.geometry.Offset(23.dp.toPx(), 10.dp.toPx()), strokeWidth = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
     }
 }
 
@@ -237,9 +234,6 @@ private fun SwitchCameraIcon() {
         drawCircle(color, radius = 4.dp.toPx(), center = androidx.compose.ui.geometry.Offset(15.dp.toPx(), 16.dp.toPx()), style = stroke)
         drawLine(color, androidx.compose.ui.geometry.Offset(11.dp.toPx(), 9.dp.toPx()), androidx.compose.ui.geometry.Offset(13.dp.toPx(), 6.dp.toPx()), strokeWidth = 2.dp.toPx())
         drawLine(color, androidx.compose.ui.geometry.Offset(13.dp.toPx(), 6.dp.toPx()), androidx.compose.ui.geometry.Offset(18.dp.toPx(), 6.dp.toPx()), strokeWidth = 2.dp.toPx())
-        drawArc(color, 205f, 100f, false, topLeft = androidx.compose.ui.geometry.Offset(1.dp.toPx(), 1.dp.toPx()), size = androidx.compose.ui.geometry.Size(28.dp.toPx(), 28.dp.toPx()), style = stroke)
-        drawLine(color, androidx.compose.ui.geometry.Offset(3.dp.toPx(), 12.dp.toPx()), androidx.compose.ui.geometry.Offset(2.dp.toPx(), 5.dp.toPx()), strokeWidth = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
-        drawLine(color, androidx.compose.ui.geometry.Offset(2.dp.toPx(), 5.dp.toPx()), androidx.compose.ui.geometry.Offset(9.dp.toPx(), 6.dp.toPx()), strokeWidth = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
     }
 }
 

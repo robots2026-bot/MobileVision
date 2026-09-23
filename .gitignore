@@ -1,0 +1,9 @@
+# Workspace-level runtime and test data
+/.smoke-data/
+/test-results/
+
+# Operating system and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp

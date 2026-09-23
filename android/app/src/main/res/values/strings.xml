@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MobileVision</string>
+    <string name="welcome_title">手机拍摄，电脑查看</string>
+    <string name="welcome_description">Android 项目已初始化</string>
+    <string name="development_status">扫码配对、拍照和自动上传功能将在后续开发。</string>
+</resources>

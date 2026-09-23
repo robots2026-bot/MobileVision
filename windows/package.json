@@ -1,0 +1,57 @@
+{
+  "name": "mobilevision-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Android 拍照，Windows 自动接收与展示",
+  "author": "MobileVision",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.main.json && vite build",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.json --noEmit",
+    "start": "npm run build && electron .",
+    "test": "tsx --test tests/*.test.ts",
+    "smoke": "npm run build && electron . --smoke-test",
+    "pack": "npm run build && electron-builder --win dir",
+    "test:android": "npm run build && electron . --android-e2e",
+    "installer": "npm run build && electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "com.mobilevision.desktop",
+    "productName": "MobileVision",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "dir",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    }
+  },
+  "dependencies": {
+    "qrcode": "1.5.4",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "selfsigned": "5.5.0",
+    "sharp": "0.35.4"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.4",
+    "@types/qrcode": "1.5.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "electron": "44.3.0",
+    "electron-builder": "26.15.3",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2",
+    "vite": "8.3.0"
+  }
+}

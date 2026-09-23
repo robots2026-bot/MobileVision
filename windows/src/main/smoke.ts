@@ -63,8 +63,9 @@ export async function runSmoke(receiver: Receiver, win: BrowserWindow) {
   await waitFor(win, "document.querySelector('.crop-region').getBoundingClientRect().width > " + cropBeforeResize.width + " && document.querySelector('.crop-region').getBoundingClientRect().height > " + cropBeforeResize.height);
   const cropBeforeMove = await win.webContents.executeJavaScript("({ left: document.querySelector('.crop-region').style.left, top: document.querySelector('.crop-region').style.top, imageLeft: document.querySelector('.viewer img').style.left })");
   win.webContents.sendInputEvent({ type: 'mouseDown', x: bounds.x + 40, y: bounds.y + 30, button: 'left', clickCount: 1 });
-  await waitFor(win, "getComputedStyle(document.querySelector('.crop-region')).cursor === 'grabbing'");
+  await waitFor(win, "getComputedStyle(document.querySelector('.crop-region')).cursor === 'grabbing' && getComputedStyle(document.querySelector('.interactive-viewer')).cursor === 'grabbing'");
   win.webContents.sendInputEvent({ type: 'mouseMove', x: bounds.x + 70, y: bounds.y + 50 });
+  await waitFor(win, "getComputedStyle(document.querySelector('.interactive-viewer')).cursor === 'grabbing'");
   win.webContents.sendInputEvent({ type: 'mouseUp', x: bounds.x + 70, y: bounds.y + 50, button: 'left', clickCount: 1 });
   await waitFor(win, "document.querySelector('.crop-region').style.left !== " + JSON.stringify(cropBeforeMove.left) + " && document.querySelector('.crop-region').style.top !== " + JSON.stringify(cropBeforeMove.top));
   await waitFor(win, "getComputedStyle(document.querySelector('.crop-region')).cursor === 'pointer'");

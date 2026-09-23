@@ -36,7 +36,7 @@ export function PhotoViewer({ photo, onError, onInteract }: { photo: Photo; onEr
     const safeX = Math.max(-minX, Math.min(photo.width - maxX, dx)); const safeY = Math.max(-minY, Math.min(photo.height - maxY, dy));
     return { a: { x: original.a.x + safeX, y: original.a.y + safeY }, b: { x: original.b.x + safeX, y: original.b.y + safeY } };
   }
-  return <><div ref={host} className={'viewer interactive-viewer ' + (crop ? 'cropping' : '')} tabIndex={0} aria-label="照片预览：右键进入截图；滚轮缩放；按住鼠标左键拖动" onContextMenu={e => { e.preventDefault(); if (!loaded || saving) return; if (crop) {
+  return <><div ref={host} className={'viewer interactive-viewer ' + (crop ? 'cropping ' : '') + (movingRegion ? 'moving-region' : '')} tabIndex={0} aria-label="照片预览：右键进入截图；滚轮缩放；按住鼠标左键拖动" onContextMenu={e => { e.preventDefault(); if (!loaded || saving) return; if (crop) {
     setCrop(false); setRegion(undefined); setMessage(''); setMovingRegion(false); drag.current = null; return;
   }
   onInteract(); setCrop(true); setMessage('拖动鼠标框选截图区域；右键任意位置退出'); host.current?.focus(); }} onKeyDown={e => { if (e.key === 'Escape') { setCrop(false); setRegion(undefined); setMovingRegion(false); drag.current = null; } }} onDoubleClick={e => { if (!crop) setView({ scale: 0, x: 0, y: 0 }); else if (insideRegion(point(e))) void copy(); }} onPointerDown={e => { if (e.button !== 0 || saving || !loaded) return; onInteract(); const p = point(e); if (crop) {

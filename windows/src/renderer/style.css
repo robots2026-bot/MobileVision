@@ -8,6 +8,7 @@ button.danger { color: #b42318; border-color: #fda29b; }
 .interactive-viewer { position: relative; overflow: hidden; display: block; touch-action: none; user-select: none; cursor: grab; border: 0; }
 .interactive-viewer:active { cursor: grabbing; }
 .interactive-viewer.cropping { cursor: crosshair; }
+.interactive-viewer.cropping.moving-region { cursor: grabbing; }
 .interactive-viewer img { pointer-events: none; }
 .crop-mask { position: absolute; inset: 0; background: #0006; pointer-events: none; }
 .crop-region { position: absolute; border: 2px solid #4169e1; background: #4169e125; box-shadow: 0 0 0 4000px #0006; cursor: pointer; }

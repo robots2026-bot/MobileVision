@@ -41,6 +41,11 @@ export async function runSmoke(receiver: Receiver, win: BrowserWindow) {
   if (BrowserWindow.getAllWindows().length !== 1) throw new Error('Paste upload unexpectedly created another window');
   let receivedClipboard = await clipboardPngSize(); for (let attempt = 0; attempt < 50 && !receivedClipboard.width; attempt++) { await new Promise(resolve => setTimeout(resolve, 50)); receivedClipboard = await clipboardPngSize(); }
   if (receivedClipboard.width !== 1200 || receivedClipboard.height !== 800) throw new Error('Phone paste request did not place the received image on the clipboard');
+  await win.webContents.executeJavaScript("document.querySelectorAll('.thumbnail')[1].click()"); await waitFor(win, `document.querySelector('.viewer img')?.src.endsWith('${upload.body.id}')`);
+  if (await win.webContents.executeJavaScript("document.querySelector('.history-modal') !== null")) throw new Error('History thumbnail still opened a separate window overlay');
+  const thirdImage = await sharp(image).tint('#ffe4d9').jpeg({ quality: 90 }).toBuffer(); const thirdUpload = await call(receiver, 'PUT', `/photos/${randomUUID()}`, thirdImage, photoHeaders(pair.body.credential, thirdImage));
+  if (thirdUpload.status !== 201) throw new Error(`Third smoke upload failed: ${JSON.stringify(thirdUpload)}`);
+  await waitFor(win, `document.querySelector('.viewer img')?.src.endsWith('${thirdUpload.body.id}') && document.querySelectorAll('.thumbnail').length === 3`);
   await win.webContents.capturePage().then(image => writeFile('test-results/windows-photo.png', image.toPNG())).catch(error => writeFile('test-results/visual-capture-warning.txt', String(error)));
   const bounds = await win.webContents.executeJavaScript("(() => { const r = document.querySelector('.viewer').getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), width: document.querySelector('.viewer img').width }; })()");
   win.webContents.sendInputEvent({ type: 'mouseWheel', x: bounds.x, y: bounds.y, deltaY: 180, deltaX: 0 });
@@ -120,7 +125,7 @@ export async function runSmoke(receiver: Receiver, win: BrowserWindow) {
   await waitFor(win, "document.querySelector('.selection-mark') !== null");
   await win.webContents.executeJavaScript("document.querySelector('.thumbnail').click()");
   await waitFor(win, "document.body.innerText.includes('已选 1 张') && document.querySelector('.thumbnail').getAttribute('aria-pressed') === 'true'");
-  await receiver.deletePhotos([upload.body.id, secondUpload.body.id]);
+  await receiver.deletePhotos([upload.body.id, secondUpload.body.id, thirdUpload.body.id]);
   await waitFor(win, "document.querySelectorAll('.thumbnail').length === 0 && document.querySelector('.viewer img') === null");
   if (details.nodeExposed) throw new Error('Node exposed in renderer');
   await writeFile('test-results/smoke.json', JSON.stringify({ passed: true, versions: process.versions, details }, null, 2));

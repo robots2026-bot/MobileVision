@@ -61,7 +61,7 @@ class WritingDocument(private val file: File) {
 }
 
 @Composable
-fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, onSync: (Bitmap) -> Unit) {
+fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, fullScreen: Boolean = false, onSync: (Bitmap) -> Unit) {
     var color by remember { mutableLongStateOf(0xff171717) }
     var widthLevel by remember { mutableFloatStateOf(4f) }
     var eraser by remember { mutableStateOf(false) }
@@ -75,7 +75,7 @@ fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, o
     val minimumWidth = with(density) { 1.5.dp.toPx() }
     val maximumWidth = displayMetrics.xdpi / 2.54f
     val width = minimumWidth + (maximumWidth - minimumWidth) * (widthLevel - 1f) / 31f
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(if (fullScreen) 2.dp else 6.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             WritingToolButton("画笔", ToolIcon.Pen, selected = !eraser, onClick = { eraser = false })
             WritingToolButton("橡皮", ToolIcon.Eraser, selected = eraser, onClick = { eraser = true })
@@ -97,7 +97,7 @@ fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, o
                 } }
             }
         }
-        Text(if (!connected) "连接电脑后可以同步；草稿已自动保存在手机" else "草稿自动保存 · 工具栏最右侧同步", style = MaterialTheme.typography.bodySmall)
+        if (!fullScreen) Text(if (!connected) "连接电脑后可以同步；草稿已自动保存在手机" else "草稿自动保存 · 工具栏最右侧同步", style = MaterialTheme.typography.bodySmall)
     }
     if (confirmClear) AlertDialog(onDismissRequest = { confirmClear = false }, title = { Text("新建空白页？") }, text = { Text("当前草稿会被清空；已经同步到电脑的图片不受影响。") }, confirmButton = { TextButton(onClick = { document.clear(); confirmClear = false }) { Text("新建") } }, dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } })
     if (chooseWidth) Dialog(onDismissRequest = { chooseWidth = false }) {

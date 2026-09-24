@@ -1,7 +1,9 @@
 package com.mobilevision.android
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
+import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
@@ -27,11 +29,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mobilevision.android.camera.CameraPanel
 import com.mobilevision.android.network.Pairing
@@ -59,7 +65,7 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
     var connectionDetails by remember { mutableStateOf(false) }
     var historyPage by remember { mutableIntStateOf(0) }
     var history by remember { mutableStateOf(false) }
-    var writing by remember { mutableStateOf(false) }
+    var writing by remember { mutableStateOf(true) }
     val writingDocument = remember { WritingDocument(java.io.File(context.filesDir, "writing-draft.json")) }
     var scan by remember { mutableStateOf(false) }; var front by remember { mutableStateOf(false) }
     var previewRatio by remember { mutableFloatStateOf(3f / 4f) }
@@ -71,6 +77,16 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { permission = it; cameraError = if (it) "" else "需要相机权限才能扫码和拍照" }
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let(vm::importPhoto) }
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val writingFullScreen = writing && LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    DisposableEffect(writingFullScreen, context) {
+        val activity = context as? Activity
+        val controller = activity?.let { WindowCompat.getInsetsController(it.window, it.window.decorView) }
+        if (writingFullScreen) {
+            controller?.hide(WindowInsetsCompat.Type.systemBars())
+            controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else controller?.show(WindowInsetsCompat.Type.systemBars())
+        onDispose { }
+    }
     DisposableEffect(lifecycle) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) { permission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED; vm.foreground(true) }
@@ -87,16 +103,16 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
     val sent = state.photos.count { it.state == "sent" }
     val failed = state.photos.count { it.state == "failed" || it.state == "capture_failed" }
     Scaffold(modifier = Modifier.fillMaxSize(), bottomBar = {
-        Surface(shadowElevation = 6.dp) { Column {
+        if (!writingFullScreen) Surface(shadowElevation = 6.dp) { Column {
             NavigationBar {
-                NavigationBarItem(selected = !history && !writing, onClick = { history = false; writing = false }, enabled = !state.capturing, icon = { PageIcon(false) }, label = { Text("拍摄") }, modifier = Modifier.testTag("tab-camera"))
                 NavigationBarItem(selected = writing, onClick = { writing = true; history = false; scan = false }, enabled = !state.capturing, icon = { WritingIcon() }, label = { Text("书写") }, modifier = Modifier.testTag("tab-writing"))
+                NavigationBarItem(selected = !history && !writing, onClick = { history = false; writing = false }, enabled = !state.capturing, icon = { PageIcon(false) }, label = { Text("拍摄") }, modifier = Modifier.testTag("tab-camera"))
                 NavigationBarItem(selected = history, onClick = { history = true; writing = false; scan = false }, enabled = !state.capturing, icon = { PageIcon(true) }, label = { Text("照片记录") }, modifier = Modifier.testTag("tab-history"))
             }
         } }
     }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Surface(onClick = { connectionDetails = true }, shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("connection-details")) {
+        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = if (writingFullScreen) 4.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(if (writingFullScreen) 2.dp else 8.dp)) {
+            if (!writingFullScreen) Surface(onClick = { connectionDetails = true }, shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("connection-details")) {
                 Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Text(state.session?.name ?: "连接电脑", modifier = Modifier.weight(1f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
                     Text(if (state.session == null) "未配对" else if (state.online) "● 已连接" else "○ 离线", modifier = Modifier.testTag("connection"), color = if (state.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelLarge)
@@ -104,7 +120,7 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
                 }
             }
             if (writing) {
-                WritingPanel(writingDocument, state.capturing, state.session != null, vm::syncWriting)
+                WritingPanel(writingDocument, state.capturing, state.session != null, writingFullScreen, vm::syncWriting)
             } else if (!history) {
                 if ((state.session != null || scan) && permission) {
                     BoxWithConstraints(Modifier.fillMaxWidth().weight(1f, fill = false), contentAlignment = androidx.compose.ui.Alignment.TopCenter) {

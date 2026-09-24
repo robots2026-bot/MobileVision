@@ -71,12 +71,16 @@ class EndToEndTest {
         assertEquals(2, photos().size)
         assertEquals(1, photos().count { it.state == "sent" })
         PhotoStore(context).use { store -> assertTrue(store.file(photos().first { it.state == "pending" }.id).exists()) }
+        compose.onNodeWithTag("tab-camera").performClick()
         compose.onNodeWithTag("queue-summary").assertTextContains("待传 1", substring = true)
     }
     @Test fun resumeAfterProcessRestart() {
         // The host stops the app process between these two invocations, and restores the receiver.
         waitUntil { photos().size == 2 && photos().all { it.state == "sent" } }
         assertNotNull(SessionVault(context).load())
+        compose.onNodeWithTag("tab-writing").assertIsSelected()
+        compose.onNodeWithTag("writing-canvas").assertIsDisplayed()
+        compose.onNodeWithTag("tab-camera").performClick()
         compose.onNodeWithTag("queue-summary").assertTextContains("已传 2", substring = true)
         val session = SessionVault(context).load()!!
         val reconnect = Pairing.parse(config.getJSONObject("reconnect").toString())

@@ -32,6 +32,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
+import kotlin.math.roundToInt
 
 data class InkPoint(val x: Float, val y: Float)
 data class InkStroke(val points: List<InkPoint>, val color: Long, val width: Float, val eraser: Boolean)
@@ -101,7 +102,7 @@ fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, o
         Surface(shape = MaterialTheme.shapes.large, tonalElevation = 6.dp) {
             Row(Modifier.width(300.dp).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Canvas(Modifier.size(48.dp)) { drawCircle(Color(color), radius = (width / 2f).coerceAtMost(size.minDimension / 2f)) }
-                Slider(value = widthLevel, onValueChange = { widthLevel = it }, valueRange = 1f..32f, steps = 30, modifier = Modifier.weight(1f).testTag("writing-width-slider"))
+                MinimalWidthSlider(value = widthLevel, onValueChange = { widthLevel = it }, modifier = Modifier.weight(1f).testTag("writing-width-slider"))
             }
         }
     }
@@ -117,6 +118,20 @@ fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, o
                 } } }
             }
         }
+    }
+}
+
+@Composable
+private fun MinimalWidthSlider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = Modifier) {
+    val trackColor = MaterialTheme.colorScheme.outline
+    Canvas(modifier.height(48.dp).semantics { contentDescription = "粗细滑轴，${value.toInt()} 级" }.pointerInput(Unit) {
+        fun updateValue(x: Float) {
+            val fraction = (x / size.width.toFloat()).coerceIn(0f, 1f)
+            onValueChange((1f + fraction * 31f).roundToInt().toFloat())
+        }
+        detectDragGestures(onDragStart = { updateValue(it.x) }, onDrag = { change, _ -> change.consume(); updateValue(change.position.x) })
+    }) {
+        drawLine(trackColor, Offset(2.dp.toPx(), center.y), Offset(size.width - 2.dp.toPx(), center.y), strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
     }
 }
 

@@ -103,7 +103,7 @@ fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, f
                     WritingToolButton("粗细 ${widthLevel.toInt()} 级", ToolIcon.Width, lineWidth = widthLevel, onClick = { chooseWidth = true })
                     WritingToolButton("新建", ToolIcon.New, enabled = document.strokes.isNotEmpty(), onClick = { confirmClear = true })
                     WritingToolButton(if (busy) "正在同步" else "同步到电脑", ToolIcon.Sync, enabled = connected && !busy && document.strokes.isNotEmpty() && canvasSize.width > 0, modifier = Modifier.testTag("writing-sync"), busy = busy, onClick = { onSync(renderWriting(document.strokes.toList(), canvasSize)) })
-                    WritingToolButton("切换竖屏", ToolIcon.Rotate, onClick = onToggleOrientation)
+                    WritingToolButton("切换竖屏", ToolIcon.Portrait, onClick = onToggleOrientation)
                 }
             }
         } else {
@@ -119,7 +119,7 @@ fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, f
                     WritingToolButton(if (busy) "正在同步" else "同步到电脑", ToolIcon.Sync, size = 38.dp, enabled = connected && !busy && document.strokes.isNotEmpty() && canvasSize.width > 0, modifier = Modifier.testTag("writing-sync"), busy = busy, onClick = { onSync(renderWriting(document.strokes.toList(), canvasSize)) })
                 }
             }
-            Surface(Modifier.align(Alignment.BottomEnd).padding(10.dp), shape = CircleShape, color = floatingColor, shadowElevation = 5.dp) { WritingToolButton("切换横屏", ToolIcon.Rotate, onClick = onToggleOrientation) }
+            Surface(Modifier.align(Alignment.BottomEnd).padding(10.dp), shape = CircleShape, color = floatingColor, shadowElevation = 5.dp) { WritingToolButton("切换横屏", ToolIcon.Landscape, onClick = onToggleOrientation) }
         }
     }
     if (confirmClear) AlertDialog(onDismissRequest = { confirmClear = false }, title = { Text("新建空白页？") }, text = { Text("当前草稿会被清空；已经同步到电脑的图片不受影响。") }, confirmButton = { TextButton(onClick = { document.clear(); confirmClear = false }) { Text("新建") } }, dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } })
@@ -167,7 +167,7 @@ private fun MinimalWidthSlider(value: Float, onValueChange: (Float) -> Unit, mod
     }
 }
 
-private enum class ToolIcon { Pen, Eraser, Color, Width, Undo, Redo, New, Sync, Rotate }
+private enum class ToolIcon { Pen, Eraser, Color, Width, Undo, Redo, New, Sync, Landscape, Portrait }
 
 @Composable
 private fun WritingToolButton(description: String, icon: ToolIcon, modifier: Modifier = Modifier, size: androidx.compose.ui.unit.Dp = 44.dp, enabled: Boolean = true, selected: Boolean = false, tint: Color? = null, lineWidth: Float = 4f, busy: Boolean = false, onClick: () -> Unit) {
@@ -193,7 +193,8 @@ private fun WritingToolIcon(icon: ToolIcon, tint: Color, lineWidth: Float) {
             ToolIcon.Undo, ToolIcon.Redo -> { val mirror = if (icon == ToolIcon.Undo) 1f else -1f; drawArc(foreground, if (mirror > 0) 205f else -25f, 230f, false, point(5f, 5f), androidx.compose.ui.geometry.Size(16f * unit, 16f * unit), style = stroke); val x = if (mirror > 0) 4f else 22f; drawLine(foreground, point(x, 13f), point(x, 6f), 2f * unit); drawLine(foreground, point(x, 6f), point(x + 6f * mirror, 7f), 2f * unit) }
             ToolIcon.New -> { drawRoundRect(foreground, point(5f, 3f), androidx.compose.ui.geometry.Size(16f * unit, 20f * unit), androidx.compose.ui.geometry.CornerRadius(2f * unit), style = stroke); drawLine(foreground, point(9f, 13f), point(17f, 13f), 2f * unit); drawLine(foreground, point(13f, 9f), point(13f, 17f), 2f * unit) }
             ToolIcon.Sync -> { drawRoundRect(foreground, point(3f, 5f), androidx.compose.ui.geometry.Size(20f * unit, 15f * unit), androidx.compose.ui.geometry.CornerRadius(2f * unit), style = stroke); drawLine(foreground, point(13f, 16f), point(13f, 8f), 2f * unit); drawLine(foreground, point(9f, 12f), point(13f, 8f), 2f * unit); drawLine(foreground, point(17f, 12f), point(13f, 8f), 2f * unit); drawLine(foreground, point(9f, 23f), point(17f, 23f), 2f * unit) }
-            ToolIcon.Rotate -> { drawArc(foreground, 205f, 220f, false, point(4f, 4f), androidx.compose.ui.geometry.Size(18f * unit, 18f * unit), style = stroke); drawLine(foreground, point(4f, 13f), point(4f, 6f), 2f * unit); drawLine(foreground, point(4f, 6f), point(10f, 7f), 2f * unit) }
+            ToolIcon.Landscape -> { drawRoundRect(foreground, point(2f, 6f), androidx.compose.ui.geometry.Size(22f * unit, 14f * unit), androidx.compose.ui.geometry.CornerRadius(2.5f * unit), style = stroke); drawCircle(foreground, 1.2f * unit, point(21f, 13f)) }
+            ToolIcon.Portrait -> { drawRoundRect(foreground, point(6f, 2f), androidx.compose.ui.geometry.Size(14f * unit, 22f * unit), androidx.compose.ui.geometry.CornerRadius(2.5f * unit), style = stroke); drawCircle(foreground, 1.2f * unit, point(13f, 21f)) }
         }
     }
 }

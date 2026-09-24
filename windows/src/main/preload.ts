@@ -6,6 +6,7 @@ const api: DesktopAPI = {
   saveCrop: (id, region) => ipcRenderer.invoke("save-crop", id, region),
   copyCrop: (id, region) => ipcRenderer.invoke('copy-crop', id, region),
   pasteCrop: (id, region) => ipcRenderer.invoke('paste-crop', id, region),
+  moveFloat: (dx, dy) => ipcRenderer.invoke('move-float', dx, dy),
   state: () => ipcRenderer.invoke('state'), chooseDirectory: () => ipcRenderer.invoke('choose-directory'),
   refreshPairing: () => ipcRenderer.invoke('refresh-pairing'), selectAddress: address => ipcRenderer.invoke('select-address', address),
   revoke: () => ipcRenderer.invoke('revoke'), openDirectory: () => ipcRenderer.invoke('open-directory'),

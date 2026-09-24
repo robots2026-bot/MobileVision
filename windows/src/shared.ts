@@ -9,6 +9,7 @@ export interface DesktopAPI {
   saveCrop(id: string, region: CropRegion): Promise<string | null>;
   copyCrop(id: string, region: CropRegion): Promise<void>;
   pasteCrop(id: string, region: CropRegion): Promise<void>;
+  moveFloat(dx: number, dy: number): Promise<void>;
   deletePhotos(ids: string[]): Promise<boolean>;
   copyPairing(): Promise<void>; exportDiagnostics(): Promise<void>;
   state(): Promise<DesktopState>; chooseDirectory(): Promise<void>; refreshPairing(): Promise<void>;

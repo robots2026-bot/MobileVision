@@ -86,6 +86,7 @@ if (single) app.whenReady().then(async () => {
   handler('show-float', async () => { await createFloatWindow(); });
   handler('show-main', async () => { await createMainWindow(true); }, true);
   handler('float-menu', () => { if (!floatWin) return; Menu.buildFromTemplate([{ label: '打开主窗口', click: () => { void createMainWindow(true); } }, { type: 'separator' }, { label: '关闭浮窗', click: () => floatWin?.close() }]).popup({ window: floatWin }); }, true);
+  handler('move-float', (dx: unknown, dy: unknown) => { if (!floatWin || typeof dx !== 'number' || typeof dy !== 'number' || !Number.isFinite(dx) || !Number.isFinite(dy) || Math.abs(dx) > 500 || Math.abs(dy) > 500) return; const [x, y] = floatWin.getPosition(); floatWin.setPosition(Math.round(x + dx), Math.round(y + dy)); }, true);
   handler('copy-crop', async (id: unknown, region: any) => {
     if (typeof id !== 'string') throw new Error('无效照片');
     const filename = receiver!.photoPath(id); if (!filename) throw new Error('照片不存在');

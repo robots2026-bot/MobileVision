@@ -47,6 +47,8 @@ export async function runSmoke(receiver: Receiver, win: BrowserWindow) {
   const restoredBounds = floatWindow?.getBounds();
   if (!floatWindow || !restoredBounds || Math.abs(restoredBounds.width - resized.width) > 2 || Math.abs(restoredBounds.height - resized.height) > 2) throw new Error('Floating window size was not restored: ' + JSON.stringify({ resized, restoredBounds, windows: BrowserWindow.getAllWindows().map(candidate => ({ id: candidate.id, bounds: candidate.getBounds() })) }));
   await waitFor(floatWindow, "document.querySelector('.float-photo img')?.naturalWidth === 1200");
+  const beforeMiddleDrag = floatWindow.getPosition(); await floatWindow.webContents.executeJavaScript('window.desktop.moveFloat(24, 18)'); await new Promise(resolve => setTimeout(resolve, 150)); const afterMiddleDrag = floatWindow.getPosition();
+  if (afterMiddleDrag[0] === beforeMiddleDrag[0] && afterMiddleDrag[1] === beforeMiddleDrag[1]) throw new Error('Middle-button drag did not move the floating window');
   const secondImage = await sharp(image).tint('#d9e4ff').jpeg({ quality: 90 }).toBuffer(); const secondUpload = await call(receiver, 'PUT', `/photos/${randomUUID()}`, secondImage, { ...photoHeaders(pair.body.credential, secondImage), 'X-Paste-After-Receive': '1' });
   if (secondUpload.status !== 201) throw new Error(`Second smoke upload failed: ${JSON.stringify(secondUpload)}`);
   await waitFor(win, `document.querySelector('.viewer img')?.src.endsWith('${secondUpload.body.id}') && document.querySelectorAll('.thumbnail').length === 2`);

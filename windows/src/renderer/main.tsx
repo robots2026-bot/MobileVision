@@ -1,29 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { DesktopAPI, DesktopState } from '../shared';
 import './style.css';
 import { PhotoViewer } from './PhotoViewer';
 declare global { interface Window { desktop: DesktopAPI; } }
-
-function FloatingApp() {
-  const [data, setData] = useState<DesktopState>();
-  const [region, setRegion] = useState<{ x: number; y: number; width: number; height: number }>(); const drag = useRef<{ x: number; y: number } | undefined>(undefined); const windowDrag = useRef<{ x: number; y: number } | undefined>(undefined); const host = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    document.body.classList.add('floating-body'); let alive = true; let generation = 0;
-    const refresh = async () => { const request = ++generation; try { const next = await window.desktop.state(); if (alive && request === generation) setData(next); } catch { } };
-    void refresh(); const unsubscribe = window.desktop.onChange(() => { void refresh(); }); const timer = setInterval(() => { void refresh(); }, 5000);
-    return () => { alive = false; unsubscribe(); clearInterval(timer); document.body.classList.remove('floating-body'); };
-  }, []);
-  const photo = data?.photos[0];
-  useEffect(() => { setRegion(undefined); }, [photo?.id]);
-  function point(event: { clientX: number; clientY: number }) { const box = host.current!.getBoundingClientRect(); return { x: event.clientX - box.left, y: event.clientY - box.top }; }
-  function imageBox() { const box = host.current!.getBoundingClientRect(); if (!photo) return { x: 0, y: 0, width: 1, height: 1, scale: 1 }; const scale = Math.min(box.width / photo.width, box.height / photo.height); const width = photo.width * scale, height = photo.height * scale; return { x: (box.width - width) / 2, y: (box.height - height) / 2, width, height, scale }; }
-  return <div ref={host} className="float-window" onAuxClick={event => { if (event.button === 1) event.preventDefault(); }} onDoubleClick={event => { if (!photo || !region) { void window.desktop.showMain(); return; } const p = point(event); if (p.x < region.x || p.y < region.y || p.x > region.x + region.width || p.y > region.y + region.height) return; const image = imageBox(); void window.desktop.pasteCrop(photo.id, { x: (region.x - image.x) / image.scale, y: (region.y - image.y) / image.scale, width: region.width / image.scale, height: region.height / image.scale }).then(() => setRegion(undefined)); }} onContextMenu={event => { event.preventDefault(); if (region) setRegion(undefined); else void window.desktop.floatMenu(); }} onPointerDown={event => { if (event.button === 1) { event.preventDefault(); windowDrag.current = { x: event.screenX, y: event.screenY }; event.currentTarget.setPointerCapture(event.pointerId); return; } if (event.button !== 0 || !photo || event.clientY < 18) return; const p = point(event), image = imageBox(); if (region && p.x >= region.x && p.y >= region.y && p.x <= region.x + region.width && p.y <= region.y + region.height) return; if (p.x < image.x || p.y < image.y || p.x > image.x + image.width || p.y > image.y + image.height) return; drag.current = p; setRegion({ x: p.x, y: p.y, width: 0, height: 0 }); event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={event => { if (windowDrag.current) { const dx = event.screenX - windowDrag.current.x, dy = event.screenY - windowDrag.current.y; if (dx || dy) { void window.desktop.moveFloat(dx, dy); windowDrag.current = { x: event.screenX, y: event.screenY }; } return; } if (!drag.current) return; const p = point(event), image = imageBox(); const x = Math.max(image.x, Math.min(image.x + image.width, p.x)), y = Math.max(image.y, Math.min(image.y + image.height, p.y)); setRegion({ x: Math.min(drag.current.x, x), y: Math.min(drag.current.y, y), width: Math.abs(x - drag.current.x), height: Math.abs(y - drag.current.y) }); }} onPointerUp={event => { if (event.button === 1) windowDrag.current = undefined; else drag.current = undefined; }} onPointerCancel={() => { windowDrag.current = undefined; drag.current = undefined; }}>
-    <div className="float-drag-strip"/>
-    <div className="float-photo">{photo ? <img key={photo.id} draggable={false} src={`mv-photo://image/${photo.id}`} alt="最新照片"/> : <div className="float-empty">等待手机图片</div>}</div>
-    {region && <div className="float-crop-region" style={{ left: region.x, top: region.y, width: region.width, height: region.height }}/>}
-  </div>;
-}
 
 function App() {
   const [data, setData] = useState<DesktopState>();
@@ -59,7 +39,7 @@ function App() {
         <section className="card"><div className="section-label">照片保存位置</div><p className="directory" title={data.directory}>{data.directory}</p><div className="button-row"><button onClick={() => void act(window.desktop.chooseDirectory)}>更改目录</button><button onClick={() => void act(window.desktop.openDirectory)}>打开文件夹 ↗</button></div></section>
         <div className="small-note">手机拍照后自动传输原图。电脑保存成功，手机才会收到确认。</div><button onClick={() => void act(window.desktop.exportDiagnostics)}>导出诊断日志</button>
       </aside>
-      <div className="workspace"><section className="card viewer-card"><div className="viewer-toolbar"><div><div className="section-label">最新照片</div><h2>{photo ? '拍摄结果' : '等待第一张照片'}</h2></div><button className="float-button" data-testid="show-float" onClick={() => void window.desktop.showFloat()}>▣ 浮窗</button></div>
+      <div className="workspace"><section className="card viewer-card"><div className="viewer-toolbar"><div><div className="section-label">最新照片</div><h2>{photo ? '拍摄结果' : '等待第一张照片'}</h2></div></div>
         {photo ? <PhotoViewer key={photo.id} photo={photo} onError={setError}/> : <div className="viewer"><div className="empty"><h3>等待第一张照片</h3><p>手机拍照后会自动显示在这里</p></div></div>}
       </section>
       <section className="card history"><div className="history-title"><div className="section-label">最近接收 <span className="count">{data.photos.length}</span></div><div className="button-row">{multi ? <><span>已选 {checked.length} 张</span><button disabled={deleting} onClick={() => setChecked(data.photos.map(p => p.id))}>全选当前列表</button><button disabled={deleting || !checked.length} className="danger" onClick={() => void removeSelected()}>{deleting ? "正在删除…" : "删除所选"}</button><button disabled={deleting} onClick={() => { setMulti(false); setChecked([]); }}>取消多选</button></> : <button disabled={!data.photos.length} onClick={() => setMulti(true)}>多选删除</button>}</div></div><div className="thumbnails">{data.photos.length ? data.photos.map((p, index) => <button key={p.id} className={`thumbnail ${(multi ? checked.includes(p.id) : index === 0) ? 'selected' : ''}`} disabled={deleting} aria-pressed={multi ? checked.includes(p.id) : index === 0} onClick={() => { if (multi) { toggle(p.id); return; } setHistoryPhoto(p.id); }} title={`${p.deviceName} · ${p.filename}`}><>{multi && <span className="selection-mark">{checked.includes(p.id) ? "☑" : "☐"}</span>}</><img loading="lazy" src={`mv-photo://thumb/${p.id}`} alt="已接收照片"/><span>{new Date(p.receivedAt).toLocaleTimeString('zh-CN', { hour12: false })}</span></button>) : <p className="muted no-history">接收到的照片会排列在这里</p>}</div></section>
@@ -69,4 +49,4 @@ function App() {
     <footer><span><span className={`dot ${data?.running ? 'online' : ''}`}/>{data?.running ? '接收服务已就绪' : '正在启动'}</span><span>MobileVision · Windows 预览版 0.1.0</span></footer>
   </div>;
 }
-createRoot(document.getElementById('root')!).render(new URLSearchParams(location.search).get('mode') === 'float' ? <FloatingApp/> : <App/>);
+createRoot(document.getElementById('root')!).render(<App/>);

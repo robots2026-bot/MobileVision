@@ -34,33 +34,13 @@ export async function runSmoke(receiver: Receiver, win: BrowserWindow) {
   const image = await samplePhoto(); const upload = await call(receiver, 'PUT', `/photos/${randomUUID()}`, image, photoHeaders(pair.body.credential, image));
   if (upload.status !== 201) throw new Error(`Smoke upload failed: ${JSON.stringify(upload)}`);
   await waitFor(win, "document.querySelector('.viewer img')?.naturalWidth === 1200 && document.querySelector('.thumbnail img')?.naturalWidth > 0");
-  await win.webContents.executeJavaScript("document.querySelector('[data-testid=\"show-float\"]').click()");
-  let floatWindow: BrowserWindow | undefined;
-  for (let attempt = 0; attempt < 100; attempt++) { floatWindow = BrowserWindow.getAllWindows().find(candidate => candidate !== win); if (floatWindow) break; await new Promise(resolve => setTimeout(resolve, 100)); }
-  if (!floatWindow || !floatWindow.isAlwaysOnTop() || !floatWindow.isResizable()) throw new Error('Floating latest-photo window was not created correctly: ' + JSON.stringify(BrowserWindow.getAllWindows().map(candidate => ({ id: candidate.id, title: candidate.getTitle(), alwaysOnTop: candidate.isAlwaysOnTop(), resizable: candidate.isResizable(), visible: candidate.isVisible(), bounds: candidate.getBounds() }))));
-  await waitFor(floatWindow, "document.querySelector('.float-photo img')?.naturalWidth === 1200");
-  if (await floatWindow.webContents.executeJavaScript("getComputedStyle(document.querySelector('.float-drag-strip')).webkitAppRegion") !== 'drag') throw new Error('Floating window drag strip is not draggable');
-  const requestedBounds = { ...floatWindow.getBounds(), width: 460, height: 310 }; const oldFloatId = floatWindow.id; floatWindow.setBounds(requestedBounds); await new Promise(resolve => setTimeout(resolve, 600)); const resized = floatWindow.getBounds(); floatWindow.close();
-  await win.webContents.executeJavaScript("document.querySelector('[data-testid=\"show-float\"]').click()");
-  floatWindow = undefined;
-  for (let attempt = 0; attempt < 100; attempt++) { floatWindow = BrowserWindow.getAllWindows().find(candidate => candidate !== win && candidate.id !== oldFloatId); if (floatWindow) break; await new Promise(resolve => setTimeout(resolve, 100)); }
-  const restoredBounds = floatWindow?.getBounds();
-  if (!floatWindow || !restoredBounds || Math.abs(restoredBounds.width - resized.width) > 2 || Math.abs(restoredBounds.height - resized.height) > 2) throw new Error('Floating window size was not restored: ' + JSON.stringify({ resized, restoredBounds, windows: BrowserWindow.getAllWindows().map(candidate => ({ id: candidate.id, bounds: candidate.getBounds() })) }));
-  await waitFor(floatWindow, "document.querySelector('.float-photo img')?.naturalWidth === 1200");
-  const beforeMiddleDrag = floatWindow.getPosition(); await floatWindow.webContents.executeJavaScript('window.desktop.moveFloat(24, 18)'); await new Promise(resolve => setTimeout(resolve, 150)); const afterMiddleDrag = floatWindow.getPosition();
-  if (afterMiddleDrag[0] === beforeMiddleDrag[0] && afterMiddleDrag[1] === beforeMiddleDrag[1]) throw new Error('Middle-button drag did not move the floating window');
+  if (await win.webContents.executeJavaScript("document.querySelector('[data-testid=\"show-float\"]') !== null") || BrowserWindow.getAllWindows().length !== 1) throw new Error('Floating window UI or window still exists');
   const secondImage = await sharp(image).tint('#d9e4ff').jpeg({ quality: 90 }).toBuffer(); const secondUpload = await call(receiver, 'PUT', `/photos/${randomUUID()}`, secondImage, { ...photoHeaders(pair.body.credential, secondImage), 'X-Paste-After-Receive': '1' });
   if (secondUpload.status !== 201) throw new Error(`Second smoke upload failed: ${JSON.stringify(secondUpload)}`);
   await waitFor(win, `document.querySelector('.viewer img')?.src.endsWith('${secondUpload.body.id}') && document.querySelectorAll('.thumbnail').length === 2`);
-  await waitFor(floatWindow, `document.querySelector('.float-photo img')?.src.endsWith('${secondUpload.body.id}')`);
+  if (BrowserWindow.getAllWindows().length !== 1) throw new Error('Paste upload unexpectedly created another window');
   let receivedClipboard = await clipboardPngSize(); for (let attempt = 0; attempt < 50 && !receivedClipboard.width; attempt++) { await new Promise(resolve => setTimeout(resolve, 50)); receivedClipboard = await clipboardPngSize(); }
   if (receivedClipboard.width !== 1200 || receivedClipboard.height !== 800) throw new Error('Phone paste request did not place the received image on the clipboard');
-  floatWindow.webContents.sendInputEvent({ type: 'mouseDown', x: 100, y: 80, button: 'left', clickCount: 1 }); floatWindow.webContents.sendInputEvent({ type: 'mouseMove', x: 220, y: 160 }); floatWindow.webContents.sendInputEvent({ type: 'mouseUp', x: 220, y: 160, button: 'left', clickCount: 1 });
-  await waitFor(floatWindow, "document.querySelector('.float-crop-region')?.clientWidth > 0");
-  floatWindow.webContents.sendInputEvent({ type: 'mouseDown', x: 150, y: 120, button: 'left', clickCount: 2 }); floatWindow.webContents.sendInputEvent({ type: 'mouseUp', x: 150, y: 120, button: 'left', clickCount: 2 });
-  await waitFor(floatWindow, "document.querySelector('.float-crop-region') === null");
-  const floatingCrop = await clipboardPngSize(); if (floatingCrop.width <= 0 || floatingCrop.width >= 1200 || floatingCrop.height <= 0 || floatingCrop.height >= 800) throw new Error('Floating selection was not copied for focused-field insertion');
-  await floatWindow.webContents.capturePage().then(image => writeFile('test-results/windows-float.png', image.toPNG())).catch(error => writeFile('test-results/visual-capture-warning.txt', String(error)));
   await win.webContents.capturePage().then(image => writeFile('test-results/windows-photo.png', image.toPNG())).catch(error => writeFile('test-results/visual-capture-warning.txt', String(error)));
   const bounds = await win.webContents.executeJavaScript("(() => { const r = document.querySelector('.viewer').getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), width: document.querySelector('.viewer img').width }; })()");
   win.webContents.sendInputEvent({ type: 'mouseWheel', x: bounds.x, y: bounds.y, deltaY: 180, deltaX: 0 });

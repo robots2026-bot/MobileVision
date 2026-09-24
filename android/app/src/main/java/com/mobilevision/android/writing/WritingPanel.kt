@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -62,9 +63,9 @@ class WritingDocument(private val file: File) {
 
 @Composable
 fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, fullScreen: Boolean = false, onToggleOrientation: () -> Unit, onSync: (Bitmap, Boolean) -> Unit) {
-    var color by remember { mutableLongStateOf(0xff171717) }
-    var widthLevel by remember { mutableFloatStateOf(4f) }
-    var eraser by remember { mutableStateOf(false) }
+    var color by rememberSaveable { mutableStateOf(0xff171717L) }
+    var widthLevel by rememberSaveable { mutableStateOf(4f) }
+    var eraser by rememberSaveable { mutableStateOf(false) }
     var active by remember { mutableStateOf<InkStroke?>(null) }
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var chooseColor by remember { mutableStateOf(false) }
@@ -72,7 +73,7 @@ fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, f
     val density = LocalDensity.current
     val displayMetrics = LocalContext.current.resources.displayMetrics
     val minimumWidth = with(density) { 1.5.dp.toPx() }
-    val maximumWidth = displayMetrics.xdpi / 2.54f
+    val maximumWidth = ((displayMetrics.xdpi + displayMetrics.ydpi) / 2f) / 2.54f
     val width = minimumWidth + (maximumWidth - minimumWidth) * (widthLevel - 1f) / 31f
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().background(Color.White).border(1.dp, MaterialTheme.colorScheme.outlineVariant).clipToBounds().onSizeChanged { canvasSize = it }.pointerInput(color, width, eraser) {

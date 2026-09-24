@@ -109,7 +109,7 @@ class EndToEndTest {
         compose.onNodeWithTag("writing-canvas").assertIsDisplayed()
         compose.onNodeWithTag("writing-sync").assertIsDisplayed().assertIsNotEnabled()
         compose.onNodeWithTag("writing-paste").assertIsDisplayed().assertIsNotEnabled()
-        listOf("画笔", "橡皮", "颜色", "粗细 4 级", "撤销", "重做", "新建", "同步到电脑").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed() }
+        listOf("画笔", "橡皮", "颜色", "粗细 4 级", "撤销", "重做", "清屏", "同步到电脑").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed() }
         compose.onNodeWithContentDescription("颜色").performClick()
         compose.onAllNodesWithContentDescription("选择颜色").assertCountEquals(8)
         compose.onAllNodesWithContentDescription("选择颜色")[0].performClick()

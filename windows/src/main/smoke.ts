@@ -23,6 +23,7 @@ async function waitFor(win: BrowserWindow, expression: string) {
   for (let attempt = 0; attempt < 100; attempt++) { if (await win.webContents.executeJavaScript(expression)) return; await new Promise(resolve => setTimeout(resolve, 100)); }
   throw new Error(`UI timeout: ${expression}`);
 }
+async function clipboardPngSize() { const item = (await clipboard.read()).find(value => value.types.includes('image/png')); if (!item) return { width: 0, height: 0 }; const info = await sharp(Buffer.from(await ((await item.getType('image/png')) as Blob).arrayBuffer())).metadata(); return { width: info.width || 0, height: info.height || 0 }; }
 export async function runSmoke(receiver: Receiver, win: BrowserWindow) {
   await mkdir('test-results', { recursive: true });
   await rm('test-results/smoke-error.txt', { force: true });
@@ -46,10 +47,17 @@ export async function runSmoke(receiver: Receiver, win: BrowserWindow) {
   const restoredBounds = floatWindow?.getBounds();
   if (!floatWindow || !restoredBounds || Math.abs(restoredBounds.width - resized.width) > 2 || Math.abs(restoredBounds.height - resized.height) > 2) throw new Error('Floating window size was not restored: ' + JSON.stringify({ resized, restoredBounds, windows: BrowserWindow.getAllWindows().map(candidate => ({ id: candidate.id, bounds: candidate.getBounds() })) }));
   await waitFor(floatWindow, "document.querySelector('.float-photo img')?.naturalWidth === 1200");
-  const secondImage = await sharp(image).tint('#d9e4ff').jpeg({ quality: 90 }).toBuffer(); const secondUpload = await call(receiver, 'PUT', `/photos/${randomUUID()}`, secondImage, photoHeaders(pair.body.credential, secondImage));
+  const secondImage = await sharp(image).tint('#d9e4ff').jpeg({ quality: 90 }).toBuffer(); const secondUpload = await call(receiver, 'PUT', `/photos/${randomUUID()}`, secondImage, { ...photoHeaders(pair.body.credential, secondImage), 'X-Paste-After-Receive': '1' });
   if (secondUpload.status !== 201) throw new Error(`Second smoke upload failed: ${JSON.stringify(secondUpload)}`);
   await waitFor(win, `document.querySelector('.viewer img')?.src.endsWith('${secondUpload.body.id}') && document.querySelectorAll('.thumbnail').length === 2`);
   await waitFor(floatWindow, `document.querySelector('.float-photo img')?.src.endsWith('${secondUpload.body.id}')`);
+  let receivedClipboard = await clipboardPngSize(); for (let attempt = 0; attempt < 50 && !receivedClipboard.width; attempt++) { await new Promise(resolve => setTimeout(resolve, 50)); receivedClipboard = await clipboardPngSize(); }
+  if (receivedClipboard.width !== 1200 || receivedClipboard.height !== 800) throw new Error('Phone paste request did not place the received image on the clipboard');
+  floatWindow.webContents.sendInputEvent({ type: 'mouseDown', x: 100, y: 80, button: 'left', clickCount: 1 }); floatWindow.webContents.sendInputEvent({ type: 'mouseMove', x: 220, y: 160 }); floatWindow.webContents.sendInputEvent({ type: 'mouseUp', x: 220, y: 160, button: 'left', clickCount: 1 });
+  await waitFor(floatWindow, "document.querySelector('.float-crop-region')?.clientWidth > 0");
+  floatWindow.webContents.sendInputEvent({ type: 'mouseDown', x: 150, y: 120, button: 'left', clickCount: 2 }); floatWindow.webContents.sendInputEvent({ type: 'mouseUp', x: 150, y: 120, button: 'left', clickCount: 2 });
+  await waitFor(floatWindow, "document.querySelector('.float-crop-region') === null");
+  const floatingCrop = await clipboardPngSize(); if (floatingCrop.width <= 0 || floatingCrop.width >= 1200 || floatingCrop.height <= 0 || floatingCrop.height >= 800) throw new Error('Floating selection was not copied for focused-field insertion');
   await floatWindow.webContents.capturePage().then(image => writeFile('test-results/windows-float.png', image.toPNG())).catch(error => writeFile('test-results/visual-capture-warning.txt', String(error)));
   await win.webContents.capturePage().then(image => writeFile('test-results/windows-photo.png', image.toPNG())).catch(error => writeFile('test-results/visual-capture-warning.txt', String(error)));
   const bounds = await win.webContents.executeJavaScript("(() => { const r = document.querySelector('.viewer').getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), width: document.querySelector('.viewer img').width }; })()");

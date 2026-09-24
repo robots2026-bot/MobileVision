@@ -16,16 +16,16 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-data class Photo(val id: String, val computerId: String, val capturedAt: String, val state: String, val attempts: Int, val nextAt: Long, val error: String, val hash: String)
+data class Photo(val id: String, val computerId: String, val capturedAt: String, val state: String, val attempts: Int, val nextAt: Long, val error: String, val hash: String, val paste: Boolean)
 
-class PhotoStore(context: Context) : SQLiteOpenHelper(context, "photos.sqlite", null, 1) {
+class PhotoStore(context: Context) : SQLiteOpenHelper(context, "photos.sqlite", null, 2) {
     val folder = File(context.filesDir, "photos").apply { mkdirs() }
-    override fun onCreate(db: SQLiteDatabase) { db.execSQL("CREATE TABLE photos (id TEXT PRIMARY KEY, computerId TEXT NOT NULL, capturedAt TEXT NOT NULL, state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, nextAt INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '', hash TEXT NOT NULL DEFAULT '')") }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
-    fun list(): List<Photo> = readableDatabase.rawQuery("SELECT id,computerId,capturedAt,state,attempts,nextAt,error,hash FROM photos ORDER BY capturedAt DESC", null).use { c -> buildList { while (c.moveToNext()) add(Photo(c.getString(0), c.getString(1), c.getString(2), c.getString(3), c.getInt(4), c.getLong(5), c.getString(6), c.getString(7))) } }
+    override fun onCreate(db: SQLiteDatabase) { db.execSQL("CREATE TABLE photos (id TEXT PRIMARY KEY, computerId TEXT NOT NULL, capturedAt TEXT NOT NULL, state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, nextAt INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '', hash TEXT NOT NULL DEFAULT '', paste INTEGER NOT NULL DEFAULT 0)") }
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) { if (oldVersion < 2) db.execSQL("ALTER TABLE photos ADD COLUMN paste INTEGER NOT NULL DEFAULT 0") }
+    fun list(): List<Photo> = readableDatabase.rawQuery("SELECT id,computerId,capturedAt,state,attempts,nextAt,error,hash,paste FROM photos ORDER BY capturedAt DESC", null).use { c -> buildList { while (c.moveToNext()) add(Photo(c.getString(0), c.getString(1), c.getString(2), c.getString(3), c.getInt(4), c.getLong(5), c.getString(6), c.getString(7), c.getInt(8) != 0)) } }
     fun file(id: String) = File(folder, UUID.fromString(id).toString() + ".jpg")
     fun temporary(id: String) = File(folder, UUID.fromString(id).toString() + ".part")
-    fun create(id: String, computerId: String, time: String) { writableDatabase.execSQL("INSERT INTO photos(id,computerId,capturedAt,state) VALUES(?,?,?,'capturing')", arrayOf(id, computerId, time)) }
+    fun create(id: String, computerId: String, time: String, paste: Boolean = false) { writableDatabase.execSQL("INSERT INTO photos(id,computerId,capturedAt,state,paste) VALUES(?,?,?,'capturing',?)", arrayOf(id, computerId, time, if (paste) 1 else 0)) }
     fun update(id: String, state: String, attempts: Int = 0, nextAt: Long = 0, error: String = "", hash: String? = null) {
         val values = ContentValues().apply { put("state", state); put("attempts", attempts); put("nextAt", nextAt); put("error", error); if (hash != null) put("hash", hash) }
         writableDatabase.update("photos", values, "id=?", arrayOf(id))

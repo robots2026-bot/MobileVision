@@ -95,9 +95,9 @@ class ReceiverApi(private val address: String, private val fingerprint: String) 
         val json = request("GET", "/status", session.credential)
         if (json.optString("computerId") != session.computerId) throw ApiFailure("COMPUTER_CHANGED", false)
     }
-    fun upload(session: Session, id: String, file: File, capturedAt: String, hash: String) {
+    fun upload(session: Session, id: String, file: File, capturedAt: String, hash: String, paste: Boolean = false) {
         val png = file.inputStream().use { input -> val signature = ByteArray(8); input.read(signature) == 8 && signature.contentEquals(byteArrayOf(-119, 80, 78, 71, 13, 10, 26, 10)) }
-        val response = request("PUT", "/photos/" + id, session.credential, file.asRequestBody((if (png) "image/png" else "image/jpeg").toMediaType()), mapOf("X-Content-Sha256" to hash, "X-Captured-At" to capturedAt))
+        val response = request("PUT", "/photos/" + id, session.credential, file.asRequestBody((if (png) "image/png" else "image/jpeg").toMediaType()), mapOf("X-Content-Sha256" to hash, "X-Captured-At" to capturedAt, "X-Paste-After-Receive" to if (paste) "1" else "0"))
         try { UUID.fromString(response.getString("id")); require(response.getString("receivedAt").isNotBlank()) } catch (_: Exception) { throw ApiFailure("INVALID_CONFIRMATION", false) }
     }
 }

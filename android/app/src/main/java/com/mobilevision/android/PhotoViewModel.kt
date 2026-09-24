@@ -141,7 +141,7 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
             } finally { mutable.value = mutable.value.copy(capturing = false) }
         }
     }
-    fun syncWriting(bitmap: Bitmap) {
+    fun syncWriting(bitmap: Bitmap, paste: Boolean = false) {
         if (mutable.value.capturing) { bitmap.recycle(); return }
         mutable.value = mutable.value.copy(capturing = true)
         worker.execute {
@@ -149,7 +149,7 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val target = session ?: throw IllegalStateException("请先连接电脑")
                 id = UUID.randomUUID().toString()
-                store.create(id, target.computerId, Instant.now().toString())
+                store.create(id, target.computerId, Instant.now().toString(), paste)
                 val temporary = store.temporary(id)
                 FileOutputStream(temporary).use { output ->
                     if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) throw IOException("无法生成书写图片")
@@ -216,7 +216,7 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
         try {
             val file = store.file(photo.id)
             if (!file.exists() || fileHash(file) != photo.hash) throw ApiFailure("LOCAL_FILE_CHANGED", false)
-            client.upload(current, photo.id, file, photo.capturedAt, photo.hash)
+            client.upload(current, photo.id, file, photo.capturedAt, photo.hash, photo.paste)
             store.update(photo.id, "sent", photo.attempts, hash = photo.hash); publish("照片已传到电脑", true)
         } catch (error: Exception) {
             val retryable = error is IOException && error !is SSLException && (error !is ApiFailure || error.retryable)

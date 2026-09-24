@@ -5,6 +5,7 @@ const api: DesktopAPI = {
   deletePhotos: ids => ipcRenderer.invoke('delete-photos', ids),
   saveCrop: (id, region) => ipcRenderer.invoke("save-crop", id, region),
   copyCrop: (id, region) => ipcRenderer.invoke('copy-crop', id, region),
+  pasteCrop: (id, region) => ipcRenderer.invoke('paste-crop', id, region),
   state: () => ipcRenderer.invoke('state'), chooseDirectory: () => ipcRenderer.invoke('choose-directory'),
   refreshPairing: () => ipcRenderer.invoke('refresh-pairing'), selectAddress: address => ipcRenderer.invoke('select-address', address),
   revoke: () => ipcRenderer.invoke('revoke'), openDirectory: () => ipcRenderer.invoke('open-directory'),

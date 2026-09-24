@@ -2,6 +2,8 @@ import { app, BrowserWindow, dialog, ipcMain, protocol, net, shell, clipboard, C
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import sharp from 'sharp';
 import QRCode from 'qrcode';
 import { cropPhoto } from './crop';
 import { Receiver, addresses } from './receiver';
@@ -54,15 +56,24 @@ async function createFloatWindow() {
   if (floatWin && !floatWin.isDestroyed() && floatClosing) { const old = floatWin; await new Promise<void>(resolve => old.once('closed', resolve)); }
   const saved = await storedFloatBounds();
   const created = new BrowserWindow({ width: saved?.width || 420, height: saved?.height || 280, x: saved?.x, y: saved?.y, minWidth: 240, minHeight: 160, frame: false, resizable: true, alwaysOnTop: true, skipTaskbar: true, show: false, backgroundColor: '#171b22', title: 'MobileVision · 最新照片', webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
-  floatWin = created; floatClosing = false; created.setAlwaysOnTop(true, 'floating'); created.webContents.setWindowOpenHandler(() => ({ action: 'deny' })); created.webContents.on('will-navigate', event => event.preventDefault());
+  floatWin = created; floatClosing = false; created.setAlwaysOnTop(true); created.webContents.setWindowOpenHandler(() => ({ action: 'deny' })); created.webContents.on('will-navigate', event => event.preventDefault());
   created.on('move', rememberFloatBounds); created.on('resize', rememberFloatBounds); created.on('close', () => { floatClosing = true; }); created.on('closed', () => { if (floatWin === created) floatWin = undefined; floatClosing = false; });
-  await created.loadFile(uiPath, { query: { mode: 'float' } }); if (saved) created.setBounds(saved); created.showInactive(); return created;
+  await created.loadFile(uiPath, { query: { mode: 'float' } }); if (saved) created.setBounds(saved); created.showInactive(); created.setAlwaysOnTop(true, 'screen-saver'); created.moveTop(); return created;
+}
+async function pastePng(bytes: Buffer) {
+  await clipboard.write([new ClipboardItem({ 'image/png': new Blob([new Uint8Array(bytes)], { type: 'image/png' }) })]);
+  if (testing) return;
+  await new Promise<void>((resolve, reject) => execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')"], { windowsHide: true }, error => error ? reject(error) : resolve()));
+}
+async function pastePhoto(id: string) {
+  const filename = receiver?.photoPath(id); if (!filename) throw new Error('照片不存在'); await pastePng(await sharp(filename).rotate().png().toBuffer());
 }
 
 if (single) app.whenReady().then(async () => {
   receiver = new Receiver(app.getPath('userData'), testing ? path.join(app.getPath('userData'), 'photos') : path.join(app.getPath('pictures'), 'MobileVision'), testing ? '127.0.0.1' : '0.0.0.0');
   await receiver.initialize();
   receiver.on('change', () => { if (win && !win.isDestroyed()) win.webContents.send('changed'); if (floatWin && !floatWin.isDestroyed()) floatWin.webContents.send('changed'); });
+  receiver.on('paste', (id: string) => { void pastePhoto(id).catch(error => console.error('Paste failed', error)); });
   protocol.handle('mv-photo', async request => {
     try {
       const url = new URL(request.url); const id = url.pathname.slice(1);
@@ -81,6 +92,9 @@ if (single) app.whenReady().then(async () => {
     const bytes = await cropPhoto(filename, region);
     await clipboard.write([new ClipboardItem({ 'image/png': new Blob([new Uint8Array(bytes)], { type: 'image/png' }) })]);
   });
+  handler('paste-crop', async (id: unknown, region: any) => {
+    if (typeof id !== 'string') throw new Error('无效照片'); const filename = receiver!.photoPath(id); if (!filename) throw new Error('照片不存在'); const bytes = await cropPhoto(filename, region); floatWin?.blur(); await new Promise(resolve => setTimeout(resolve, 120)); await pastePng(bytes);
+  }, true);
   handler('save-crop', async (id: unknown, region: any) => {
     if (typeof id !== 'string') throw new Error('无效照片');
     const filename = receiver!.photoPath(id); if (!filename) throw new Error('照片不存在');

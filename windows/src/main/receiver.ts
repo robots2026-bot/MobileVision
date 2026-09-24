@@ -210,6 +210,7 @@ export class Receiver extends EventEmitter {
   private async upload(req: IncomingMessage, res: ServerResponse, device: Device, photoId: string, existing?: Row) {
     const bytes = Number(req.headers['content-length']); const hash = req.headers['x-content-sha256'];
     const capturedAt = req.headers['x-captured-at'];
+    const pasteAfterReceive = req.headers['x-paste-after-receive'];
     const contentType = req.headers['content-type'];
     if (contentType !== 'image/jpeg' && contentType !== 'image/png') throw new ApiError(415, 'IMAGE_TYPE_REQUIRED');
     const expectedFormat = contentType === 'image/png' ? 'png' : 'jpeg';
@@ -217,6 +218,7 @@ export class Receiver extends EventEmitter {
     if (bytes > MAX_BYTES) throw new ApiError(413, 'FILE_TOO_LARGE');
     if (typeof hash !== 'string' || !/^[0-9a-f]{64}$/.test(hash)) throw new ApiError(400, 'INVALID_HASH');
     if (typeof capturedAt !== 'string' || capturedAt.length > 40 || !Number.isFinite(Date.parse(capturedAt))) throw new ApiError(400, 'INVALID_CAPTURE_TIME');
+    if (pasteAfterReceive !== undefined && pasteAfterReceive !== '0' && pasteAfterReceive !== '1') throw new ApiError(400, 'INVALID_PASTE_REQUEST');
     if (existing && (existing.hash !== hash || existing.bytes !== bytes)) throw new ApiError(409, 'PHOTO_ID_CONFLICT');
     if (existing) {
       const file = await readFile(existing.filepath);
@@ -245,7 +247,7 @@ export class Receiver extends EventEmitter {
       this.db.prepare('UPDATE photos SET width=?,height=? WHERE id=?').run(width, height, id);
       await rename(temporary, filepath); committed = true;
       this.db.prepare("UPDATE photos SET status='ready' WHERE id=?").run(id);
-      this.error = null; this.reply(res, 201, { id, receivedAt, duplicate: false }); this.emit('change');
+      this.error = null; this.reply(res, 201, { id, receivedAt, duplicate: false }); this.emit('change'); if (pasteAfterReceive === '1') this.emit('paste', id);
     } finally {
       if (!committed) { await rm(temporary, { force: true }); if (journaled) this.db.prepare('DELETE FROM photos WHERE id=?').run(id); }
     }

@@ -61,7 +61,7 @@ class WritingDocument(private val file: File) {
 }
 
 @Composable
-fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, fullScreen: Boolean = false, onSync: (Bitmap) -> Unit) {
+fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, fullScreen: Boolean = false, onToggleOrientation: () -> Unit, onSync: (Bitmap) -> Unit) {
     var color by remember { mutableLongStateOf(0xff171717) }
     var widthLevel by remember { mutableFloatStateOf(4f) }
     var eraser by remember { mutableStateOf(false) }
@@ -75,18 +75,8 @@ fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, f
     val minimumWidth = with(density) { 1.5.dp.toPx() }
     val maximumWidth = displayMetrics.xdpi / 2.54f
     val width = minimumWidth + (maximumWidth - minimumWidth) * (widthLevel - 1f) / 31f
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(if (fullScreen) 2.dp else 6.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            WritingToolButton("画笔", ToolIcon.Pen, selected = !eraser, onClick = { eraser = false })
-            WritingToolButton("橡皮", ToolIcon.Eraser, selected = eraser, onClick = { eraser = true })
-            WritingToolButton("颜色", ToolIcon.Color, tint = Color(color), onClick = { chooseColor = true })
-            WritingToolButton("粗细 ${widthLevel.toInt()} 级", ToolIcon.Width, lineWidth = widthLevel, onClick = { chooseWidth = true })
-            WritingToolButton("撤销", ToolIcon.Undo, enabled = document.strokes.isNotEmpty(), modifier = Modifier.testTag("writing-undo"), onClick = document::undo)
-            WritingToolButton("重做", ToolIcon.Redo, enabled = document.undone.isNotEmpty(), onClick = document::redo)
-            WritingToolButton("新建", ToolIcon.New, enabled = document.strokes.isNotEmpty(), onClick = { confirmClear = true })
-            WritingToolButton(if (busy) "正在同步" else "同步到电脑", ToolIcon.Sync, enabled = connected && !busy && document.strokes.isNotEmpty() && canvasSize.width > 0, modifier = Modifier.testTag("writing-sync"), busy = busy, onClick = { onSync(renderWriting(document.strokes.toList(), canvasSize)) })
-        }
-        Box(Modifier.fillMaxWidth().weight(1f).background(Color.White).border(1.dp, MaterialTheme.colorScheme.outlineVariant).clipToBounds().onSizeChanged { canvasSize = it }.pointerInput(color, width, eraser) {
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().background(Color.White).border(1.dp, MaterialTheme.colorScheme.outlineVariant).clipToBounds().onSizeChanged { canvasSize = it }.pointerInput(color, width, eraser) {
             detectDragGestures(onDragStart = { point -> active = InkStroke(listOf(InkPoint(point.x, point.y)), color, width, eraser) }, onDrag = { change, _ -> change.consume(); active = active?.let { it.copy(points = it.points + InkPoint(change.position.x, change.position.y)) } }, onDragEnd = { active?.let(document::add); active = null }, onDragCancel = { active = null })
         }.testTag("writing-canvas")) {
             Canvas(Modifier.fillMaxSize()) {
@@ -97,7 +87,40 @@ fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, f
                 } }
             }
         }
-        if (!fullScreen) Text(if (!connected) "连接电脑后可以同步；草稿已自动保存在手机" else "草稿自动保存 · 工具栏最右侧同步", style = MaterialTheme.typography.bodySmall)
+        val floatingColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
+        if (fullScreen) {
+            Surface(Modifier.align(Alignment.CenterEnd).padding(end = 8.dp), shape = MaterialTheme.shapes.large, color = floatingColor, shadowElevation = 5.dp) {
+                Column(Modifier.padding(vertical = 4.dp)) {
+                    WritingToolButton("画笔", ToolIcon.Pen, selected = !eraser, onClick = { eraser = false })
+                    WritingToolButton("橡皮", ToolIcon.Eraser, selected = eraser, onClick = { eraser = true })
+                    WritingToolButton("撤销", ToolIcon.Undo, enabled = document.strokes.isNotEmpty(), modifier = Modifier.testTag("writing-undo"), onClick = document::undo)
+                    WritingToolButton("重做", ToolIcon.Redo, enabled = document.undone.isNotEmpty(), onClick = document::redo)
+                }
+            }
+            Surface(Modifier.align(Alignment.TopEnd).padding(8.dp), shape = MaterialTheme.shapes.large, color = floatingColor, shadowElevation = 5.dp) {
+                Row(Modifier.padding(horizontal = 4.dp)) {
+                    WritingToolButton("颜色", ToolIcon.Color, tint = Color(color), onClick = { chooseColor = true })
+                    WritingToolButton("粗细 ${widthLevel.toInt()} 级", ToolIcon.Width, lineWidth = widthLevel, onClick = { chooseWidth = true })
+                    WritingToolButton("新建", ToolIcon.New, enabled = document.strokes.isNotEmpty(), onClick = { confirmClear = true })
+                    WritingToolButton(if (busy) "正在同步" else "同步到电脑", ToolIcon.Sync, enabled = connected && !busy && document.strokes.isNotEmpty() && canvasSize.width > 0, modifier = Modifier.testTag("writing-sync"), busy = busy, onClick = { onSync(renderWriting(document.strokes.toList(), canvasSize)) })
+                    WritingToolButton("切换竖屏", ToolIcon.Rotate, onClick = onToggleOrientation)
+                }
+            }
+        } else {
+            Surface(Modifier.align(Alignment.TopCenter).padding(top = 8.dp), shape = MaterialTheme.shapes.large, color = floatingColor, shadowElevation = 5.dp) {
+                Row(Modifier.padding(horizontal = 4.dp)) {
+                    WritingToolButton("画笔", ToolIcon.Pen, size = 38.dp, selected = !eraser, onClick = { eraser = false })
+                    WritingToolButton("橡皮", ToolIcon.Eraser, size = 38.dp, selected = eraser, onClick = { eraser = true })
+                    WritingToolButton("颜色", ToolIcon.Color, size = 38.dp, tint = Color(color), onClick = { chooseColor = true })
+                    WritingToolButton("粗细 ${widthLevel.toInt()} 级", ToolIcon.Width, size = 38.dp, lineWidth = widthLevel, onClick = { chooseWidth = true })
+                    WritingToolButton("撤销", ToolIcon.Undo, size = 38.dp, enabled = document.strokes.isNotEmpty(), modifier = Modifier.testTag("writing-undo"), onClick = document::undo)
+                    WritingToolButton("重做", ToolIcon.Redo, size = 38.dp, enabled = document.undone.isNotEmpty(), onClick = document::redo)
+                    WritingToolButton("新建", ToolIcon.New, size = 38.dp, enabled = document.strokes.isNotEmpty(), onClick = { confirmClear = true })
+                    WritingToolButton(if (busy) "正在同步" else "同步到电脑", ToolIcon.Sync, size = 38.dp, enabled = connected && !busy && document.strokes.isNotEmpty() && canvasSize.width > 0, modifier = Modifier.testTag("writing-sync"), busy = busy, onClick = { onSync(renderWriting(document.strokes.toList(), canvasSize)) })
+                }
+            }
+            Surface(Modifier.align(Alignment.BottomEnd).padding(10.dp), shape = CircleShape, color = floatingColor, shadowElevation = 5.dp) { WritingToolButton("切换横屏", ToolIcon.Rotate, onClick = onToggleOrientation) }
+        }
     }
     if (confirmClear) AlertDialog(onDismissRequest = { confirmClear = false }, title = { Text("新建空白页？") }, text = { Text("当前草稿会被清空；已经同步到电脑的图片不受影响。") }, confirmButton = { TextButton(onClick = { document.clear(); confirmClear = false }) { Text("新建") } }, dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } })
     if (chooseWidth) Dialog(onDismissRequest = { chooseWidth = false }) {
@@ -144,11 +167,11 @@ private fun MinimalWidthSlider(value: Float, onValueChange: (Float) -> Unit, mod
     }
 }
 
-private enum class ToolIcon { Pen, Eraser, Color, Width, Undo, Redo, New, Sync }
+private enum class ToolIcon { Pen, Eraser, Color, Width, Undo, Redo, New, Sync, Rotate }
 
 @Composable
-private fun WritingToolButton(description: String, icon: ToolIcon, modifier: Modifier = Modifier, enabled: Boolean = true, selected: Boolean = false, tint: Color? = null, lineWidth: Float = 4f, busy: Boolean = false, onClick: () -> Unit) {
-    val decorated = modifier.size(44.dp).semantics { contentDescription = description }
+private fun WritingToolButton(description: String, icon: ToolIcon, modifier: Modifier = Modifier, size: androidx.compose.ui.unit.Dp = 44.dp, enabled: Boolean = true, selected: Boolean = false, tint: Color? = null, lineWidth: Float = 4f, busy: Boolean = false, onClick: () -> Unit) {
+    val decorated = modifier.size(size).semantics { contentDescription = description }
     val resolvedTint = tint ?: LocalContentColor.current
     val content: @Composable () -> Unit = { if (busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) else WritingToolIcon(icon, resolvedTint, lineWidth) }
     if (selected) FilledTonalIconButton(onClick = onClick, modifier = decorated, enabled = enabled, content = content) else IconButton(onClick = onClick, modifier = decorated, enabled = enabled, content = content)
@@ -170,6 +193,7 @@ private fun WritingToolIcon(icon: ToolIcon, tint: Color, lineWidth: Float) {
             ToolIcon.Undo, ToolIcon.Redo -> { val mirror = if (icon == ToolIcon.Undo) 1f else -1f; drawArc(foreground, if (mirror > 0) 205f else -25f, 230f, false, point(5f, 5f), androidx.compose.ui.geometry.Size(16f * unit, 16f * unit), style = stroke); val x = if (mirror > 0) 4f else 22f; drawLine(foreground, point(x, 13f), point(x, 6f), 2f * unit); drawLine(foreground, point(x, 6f), point(x + 6f * mirror, 7f), 2f * unit) }
             ToolIcon.New -> { drawRoundRect(foreground, point(5f, 3f), androidx.compose.ui.geometry.Size(16f * unit, 20f * unit), androidx.compose.ui.geometry.CornerRadius(2f * unit), style = stroke); drawLine(foreground, point(9f, 13f), point(17f, 13f), 2f * unit); drawLine(foreground, point(13f, 9f), point(13f, 17f), 2f * unit) }
             ToolIcon.Sync -> { drawRoundRect(foreground, point(3f, 5f), androidx.compose.ui.geometry.Size(20f * unit, 15f * unit), androidx.compose.ui.geometry.CornerRadius(2f * unit), style = stroke); drawLine(foreground, point(13f, 16f), point(13f, 8f), 2f * unit); drawLine(foreground, point(9f, 12f), point(13f, 8f), 2f * unit); drawLine(foreground, point(17f, 12f), point(13f, 8f), 2f * unit); drawLine(foreground, point(9f, 23f), point(17f, 23f), 2f * unit) }
+            ToolIcon.Rotate -> { drawArc(foreground, 205f, 220f, false, point(4f, 4f), androidx.compose.ui.geometry.Size(18f * unit, 18f * unit), style = stroke); drawLine(foreground, point(4f, 13f), point(4f, 6f), 2f * unit); drawLine(foreground, point(4f, 6f), point(10f, 7f), 2f * unit) }
         }
     }
 }

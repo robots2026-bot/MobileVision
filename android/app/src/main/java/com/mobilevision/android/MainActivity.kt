@@ -3,6 +3,7 @@ package com.mobilevision.android
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -26,6 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -66,6 +68,7 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
     var historyPage by remember { mutableIntStateOf(0) }
     var history by remember { mutableStateOf(false) }
     var writing by remember { mutableStateOf(true) }
+    var writingLandscape by rememberSaveable { mutableStateOf(false) }
     val writingDocument = remember { WritingDocument(java.io.File(context.filesDir, "writing-draft.json")) }
     var scan by remember { mutableStateOf(false) }; var front by remember { mutableStateOf(false) }
     var previewRatio by remember { mutableFloatStateOf(3f / 4f) }
@@ -77,7 +80,10 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { permission = it; cameraError = if (it) "" else "需要相机权限才能扫码和拍照" }
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let(vm::importPhoto) }
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    val writingFullScreen = writing && LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val writingFullScreen = writing && writingLandscape && LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    LaunchedEffect(writingLandscape, context) {
+        (context as? Activity)?.requestedOrientation = if (writingLandscape) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    }
     DisposableEffect(writingFullScreen, context) {
         val activity = context as? Activity
         val controller = activity?.let { WindowCompat.getInsetsController(it.window, it.window.decorView) }
@@ -120,7 +126,7 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
                 }
             }
             if (writing) {
-                WritingPanel(writingDocument, state.capturing, state.session != null, writingFullScreen, vm::syncWriting)
+                WritingPanel(writingDocument, state.capturing, state.session != null, writingFullScreen, { writingLandscape = !writingLandscape }, vm::syncWriting)
             } else if (!history) {
                 if ((state.session != null || scan) && permission) {
                     BoxWithConstraints(Modifier.fillMaxWidth().weight(1f, fill = false), contentAlignment = androidx.compose.ui.Alignment.TopCenter) {

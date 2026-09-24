@@ -12,12 +12,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -84,7 +86,7 @@ fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, o
             WritingToolButton("新建", ToolIcon.New, enabled = document.strokes.isNotEmpty(), onClick = { confirmClear = true })
             WritingToolButton(if (busy) "正在同步" else "同步到电脑", ToolIcon.Sync, enabled = connected && !busy && document.strokes.isNotEmpty() && canvasSize.width > 0, modifier = Modifier.testTag("writing-sync"), busy = busy, onClick = { onSync(renderWriting(document.strokes.toList(), canvasSize)) })
         }
-        Box(Modifier.fillMaxWidth().weight(1f).background(Color.White).border(1.dp, MaterialTheme.colorScheme.outlineVariant).onSizeChanged { canvasSize = it }.pointerInput(color, width, eraser) {
+        Box(Modifier.fillMaxWidth().weight(1f).background(Color.White).border(1.dp, MaterialTheme.colorScheme.outlineVariant).clipToBounds().onSizeChanged { canvasSize = it }.pointerInput(color, width, eraser) {
             detectDragGestures(onDragStart = { point -> active = InkStroke(listOf(InkPoint(point.x, point.y)), color, width, eraser) }, onDrag = { change, _ -> change.consume(); active = active?.let { it.copy(points = it.points + InkPoint(change.position.x, change.position.y)) } }, onDragEnd = { active?.let(document::add); active = null }, onDragCancel = { active = null })
         }.testTag("writing-canvas")) {
             Canvas(Modifier.fillMaxSize()) {
@@ -110,7 +112,6 @@ fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, o
         val colors = listOf(0xff171717L, 0xffd42a2aL, 0xff245eeaL, 0xff18864bL, 0xffff8a00L, 0xff7a3fc1L, 0xff8b5a2bL, 0xff6b7280L)
         Surface(shape = MaterialTheme.shapes.large, tonalElevation = 6.dp) {
             Column(Modifier.width(210.dp).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("选择画笔颜色", style = MaterialTheme.typography.titleMedium)
                 colors.chunked(4).forEach { row -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { row.forEach { choice ->
                     Surface(onClick = { color = choice; eraser = false; chooseColor = false }, modifier = Modifier.size(36.dp).semantics { contentDescription = "选择颜色" }, shape = CircleShape, color = Color.Transparent) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Box(Modifier.size(18.dp).background(Color(choice), CircleShape).then(if (color == choice) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape) else Modifier)) }
@@ -123,7 +124,8 @@ fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, o
 
 @Composable
 private fun MinimalWidthSlider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = Modifier) {
-    val trackColor = MaterialTheme.colorScheme.outline
+    val activeColor = MaterialTheme.colorScheme.primary
+    val inactiveColor = MaterialTheme.colorScheme.outlineVariant
     Canvas(modifier.height(48.dp).semantics { contentDescription = "粗细滑轴，${value.toInt()} 级" }.pointerInput(Unit) {
         fun updateValue(x: Float) {
             val fraction = (x / size.width.toFloat()).coerceIn(0f, 1f)
@@ -131,7 +133,14 @@ private fun MinimalWidthSlider(value: Float, onValueChange: (Float) -> Unit, mod
         }
         detectDragGestures(onDragStart = { updateValue(it.x) }, onDrag = { change, _ -> change.consume(); updateValue(change.position.x) })
     }) {
-        drawLine(trackColor, Offset(2.dp.toPx(), center.y), Offset(size.width - 2.dp.toPx(), center.y), strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
+        val thickness = 8.dp.toPx()
+        val left = 2.dp.toPx()
+        val top = center.y - thickness / 2f
+        val trackSize = androidx.compose.ui.geometry.Size(size.width - left * 2f, thickness)
+        val corners = androidx.compose.ui.geometry.CornerRadius(thickness / 2f)
+        drawRoundRect(inactiveColor, Offset(left, top), trackSize, corners)
+        val selectedRight = left + trackSize.width * ((value - 1f) / 31f).coerceIn(0f, 1f)
+        clipRect(left = left, top = top, right = selectedRight, bottom = top + thickness) { drawRoundRect(activeColor, Offset(left, top), trackSize, corners) }
     }
 }
 

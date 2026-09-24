@@ -181,7 +181,6 @@ private fun WritingToolButton(description: String, icon: ToolIcon, modifier: Mod
 @Composable
 private fun WritingToolIcon(icon: ToolIcon, tint: Color, lineWidth: Float) {
     val foreground = if (icon == ToolIcon.Color) tint else LocalContentColor.current
-    val outline = MaterialTheme.colorScheme.outline
     Canvas(Modifier.size(26.dp)) {
         val unit = size.minDimension / 26f
         val stroke = Stroke(2f * unit, cap = StrokeCap.Round, join = StrokeJoin.Round)
@@ -189,7 +188,7 @@ private fun WritingToolIcon(icon: ToolIcon, tint: Color, lineWidth: Float) {
         when (icon) {
             ToolIcon.Pen -> { drawLine(foreground, point(5f, 21f), point(20f, 6f), 3f * unit, StrokeCap.Round); drawLine(foreground, point(4f, 22f), point(9f, 20f), 2f * unit) }
             ToolIcon.Eraser -> { val path = Path().apply { moveTo(5f * unit, 17f * unit); lineTo(15f * unit, 7f * unit); lineTo(22f * unit, 14f * unit); lineTo(12f * unit, 24f * unit); close() }; drawPath(path, foreground, style = stroke); drawLine(foreground, point(9f, 13f), point(16f, 20f), 2f * unit) }
-            ToolIcon.Color -> { drawCircle(foreground, 2.7f * unit, center); drawCircle(outline, 3.7f * unit, center, style = Stroke(1.2f * unit)) }
+            ToolIcon.Color -> drawCircle(foreground, 7f * unit, center)
             ToolIcon.Width -> drawLine(foreground, point(3f, 13f), point(23f, 13f), lineWidth.coerceIn(1f, 32f) * 0.28f * unit, StrokeCap.Round)
             ToolIcon.Undo, ToolIcon.Redo -> { val undo = icon == ToolIcon.Undo; val x: (Float) -> Float = { value -> if (undo) value else 26f - value }; val path = Path().apply { moveTo(x(22f) * unit, 19f * unit); lineTo(x(15f) * unit, 19f * unit); cubicTo(x(10f) * unit, 19f * unit, x(7f) * unit, 16f * unit, x(7f) * unit, 11f * unit); lineTo(x(7f) * unit, 8f * unit) }; drawPath(path, foreground, style = stroke); drawLine(foreground, point(x(7f), 8f), point(x(3f), 12f), 2f * unit); drawLine(foreground, point(x(7f), 8f), point(x(11f), 12f), 2f * unit) }
             ToolIcon.Clear -> { drawRoundRect(foreground, point(3f, 5f), androidx.compose.ui.geometry.Size(20f * unit, 16f * unit), androidx.compose.ui.geometry.CornerRadius(2f * unit), style = stroke); drawLine(foreground, point(8f, 17f), point(18f, 9f), 3f * unit, StrokeCap.Round); drawLine(foreground, point(7f, 23f), point(19f, 23f), 2f * unit, StrokeCap.Round) }

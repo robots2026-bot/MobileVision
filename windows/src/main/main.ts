@@ -1,7 +1,7 @@
-import { app, BrowserWindow, dialog, ipcMain, protocol, net, shell, clipboard, ClipboardItem } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, protocol, net, shell, clipboard, ClipboardItem, Menu, screen } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import QRCode from 'qrcode';
 import { cropPhoto } from './crop';
 import { Receiver, addresses } from './receiver';
@@ -14,7 +14,7 @@ const testing = smoke || androidE2E;
 if (testing) app.setPath('userData', path.join(process.cwd(), '.smoke-data', String(Date.now())));
 const single = app.requestSingleInstanceLock();
 if (!single) app.quit();
-let win: BrowserWindow | undefined; let receiver: Receiver | undefined; let closing = false; let exitCode = 0; let selectedAddress = '';
+let win: BrowserWindow | undefined; let floatWin: BrowserWindow | undefined; let receiver: Receiver | undefined; let closing = false; let floatClosing = false; let exitCode = 0; let selectedAddress = ''; let boundsTimer: NodeJS.Timeout | undefined;
 const uiPath = path.join(__dirname, '../renderer/index.html');
 
 async function state(): Promise<DesktopState> {
@@ -22,17 +22,47 @@ async function state(): Promise<DesktopState> {
   const pair = receiver!.pairing(selectedAddress);
   return { directory: receiver!.directory, addresses: list, selectedAddress, port: receiver!.port, running: receiver!.port > 0, pairing: { qr: await QRCode.toDataURL(JSON.stringify(pair), { width: 260, margin: 2, errorCorrectionLevel: 'M' }), expiresAt: pair.expiresAt }, device: receiver!.getDevice(), photos: receiver!.photos(), error: receiver!.error };
 }
-function handler(name: string, callback: (...args: any[]) => any) {
+function handler(name: string, callback: (...args: any[]) => any, allowFloat = false) {
   ipcMain.handle(name, (event, ...args) => {
-    if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) throw new Error('Untrusted sender');
+    const mainSender = !!win && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame;
+    const floatSender = allowFloat && !!floatWin && event.sender === floatWin.webContents && event.senderFrame === floatWin.webContents.mainFrame;
+    if (!mainSender && !floatSender) throw new Error('Untrusted sender');
     return callback(...args);
   });
+}
+
+async function createMainWindow(show = true) {
+  if (win && !win.isDestroyed()) { if (win.isMinimized()) win.restore(); if (show) { win.show(); win.focus(); } return win; }
+  win = new BrowserWindow({ width: 1260, height: 850, minWidth: 1000, minHeight: 700, show, backgroundColor: '#f4f6f9', title: 'MobileVision · 手机图片助手', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' })); win.webContents.on('will-navigate', event => event.preventDefault()); win.on('closed', () => { win = undefined; });
+  await win.loadFile(uiPath); return win;
+}
+async function storedFloatBounds() {
+  try {
+    const value = JSON.parse(await readFile(path.join(app.getPath('userData'), 'float-window.json'), 'utf8'));
+    if (![value.x, value.y, value.width, value.height].every(Number.isFinite) || value.width < 240 || value.height < 160) return undefined;
+    const visible = screen.getAllDisplays().some(display => value.x < display.bounds.x + display.bounds.width && value.x + value.width > display.bounds.x && value.y < display.bounds.y + display.bounds.height && value.y + value.height > display.bounds.y);
+    return visible ? value as { x: number; y: number; width: number; height: number } : undefined;
+  } catch { return undefined; }
+}
+function rememberFloatBounds() {
+  if (!floatWin || floatWin.isDestroyed()) return; if (boundsTimer) clearTimeout(boundsTimer);
+  boundsTimer = setTimeout(() => { if (floatWin && !floatWin.isDestroyed()) void writeFile(path.join(app.getPath('userData'), 'float-window.json'), JSON.stringify(floatWin.getBounds())); }, 250);
+}
+async function createFloatWindow() {
+  if (floatWin && !floatWin.isDestroyed() && !floatClosing) { floatWin.showInactive(); floatWin.moveTop(); return floatWin; }
+  if (floatWin && !floatWin.isDestroyed() && floatClosing) { const old = floatWin; await new Promise<void>(resolve => old.once('closed', resolve)); }
+  const saved = await storedFloatBounds();
+  const created = new BrowserWindow({ width: saved?.width || 420, height: saved?.height || 280, x: saved?.x, y: saved?.y, minWidth: 240, minHeight: 160, frame: false, resizable: true, alwaysOnTop: true, skipTaskbar: true, show: false, backgroundColor: '#171b22', title: 'MobileVision · 最新照片', webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  floatWin = created; floatClosing = false; created.setAlwaysOnTop(true, 'floating'); created.webContents.setWindowOpenHandler(() => ({ action: 'deny' })); created.webContents.on('will-navigate', event => event.preventDefault());
+  created.on('move', rememberFloatBounds); created.on('resize', rememberFloatBounds); created.on('close', () => { floatClosing = true; }); created.on('closed', () => { if (floatWin === created) floatWin = undefined; floatClosing = false; });
+  await created.loadFile(uiPath, { query: { mode: 'float' } }); if (saved) created.setBounds(saved); created.showInactive(); return created;
 }
 
 if (single) app.whenReady().then(async () => {
   receiver = new Receiver(app.getPath('userData'), testing ? path.join(app.getPath('userData'), 'photos') : path.join(app.getPath('pictures'), 'MobileVision'), testing ? '127.0.0.1' : '0.0.0.0');
   await receiver.initialize();
-  receiver.on('change', () => { if (win && !win.isDestroyed()) win.webContents.send('changed'); });
+  receiver.on('change', () => { if (win && !win.isDestroyed()) win.webContents.send('changed'); if (floatWin && !floatWin.isDestroyed()) floatWin.webContents.send('changed'); });
   protocol.handle('mv-photo', async request => {
     try {
       const url = new URL(request.url); const id = url.pathname.slice(1);
@@ -41,7 +71,10 @@ if (single) app.whenReady().then(async () => {
       const filename = receiver!.photoPath(id); return filename ? net.fetch(pathToFileURL(filename).toString()) : new Response(null, { status: 404 });
     } catch { return new Response(null, { status: 404 }); }
   });
-  handler('state', state);
+  handler('state', state, true);
+  handler('show-float', async () => { await createFloatWindow(); });
+  handler('show-main', async () => { await createMainWindow(true); }, true);
+  handler('float-menu', () => { if (!floatWin) return; Menu.buildFromTemplate([{ label: '打开主窗口', click: () => { void createMainWindow(true); } }, { type: 'separator' }, { label: '关闭浮窗', click: () => floatWin?.close() }]).popup({ window: floatWin }); }, true);
   handler('copy-crop', async (id: unknown, region: any) => {
     if (typeof id !== 'string') throw new Error('无效照片');
     const filename = receiver!.photoPath(id); if (!filename) throw new Error('照片不存在');
@@ -75,19 +108,15 @@ if (single) app.whenReady().then(async () => {
   handler('revoke', async () => { const result = await dialog.showMessageBox(win!, { type: 'question', message: '解除手机配对？', detail: '解除后，手机需要重新扫码才能继续上传。已接收的照片会保留。', buttons: ['取消', '解除配对'], defaultId: 0, cancelId: 0 }); if (result.response === 1) receiver!.revoke(); });
   handler('open-directory', async () => { const error = await shell.openPath(receiver!.directory); if (error) throw new Error(error); });
   handler('reveal-photo', (id: unknown) => { if (typeof id !== 'string') throw new Error('无效照片'); const filename = receiver!.photoPath(id); if (!filename) throw new Error('照片不存在'); shell.showItemInFolder(filename); });
-  win = new BrowserWindow({ width: 1260, height: 850, minWidth: 1000, minHeight: 700, show: !testing, backgroundColor: '#f4f6f9', title: 'MobileVision · 手机图片助手', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
-  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  win.webContents.on('will-navigate', event => event.preventDefault());
-  win.on('closed', () => { win = undefined; });
-  await win.loadFile(uiPath);
+  const mainWindow = await createMainWindow(!testing);
   if (androidE2E) {
     const { runAndroidE2E } = await import('./android-e2e.js');
-    await runAndroidE2E(receiver, win);
+    await runAndroidE2E(receiver, mainWindow);
     app.quit();
   }
   if (smoke) {
     const { runSmoke } = await import('./smoke.js');
-    await runSmoke(receiver, win);
+    await runSmoke(receiver, mainWindow);
     app.quit();
   }
 }).catch(async error => {
@@ -95,6 +124,6 @@ if (single) app.whenReady().then(async () => {
   else dialog.showErrorBox('MobileVision 启动失败', error.message);
   app.quit();
 });
-app.on('second-instance', () => { win?.restore(); win?.focus(); });
+app.on('second-instance', () => { void createMainWindow(true); });
 app.on('window-all-closed', () => app.quit());
 app.on('before-quit', event => { if (receiver && !closing) { event.preventDefault(); closing = true; void receiver.close().finally(() => app.exit(exitCode)); } });

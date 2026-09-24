@@ -9,6 +9,7 @@ const api: DesktopAPI = {
   refreshPairing: () => ipcRenderer.invoke('refresh-pairing'), selectAddress: address => ipcRenderer.invoke('select-address', address),
   revoke: () => ipcRenderer.invoke('revoke'), openDirectory: () => ipcRenderer.invoke('open-directory'),
   revealPhoto: id => ipcRenderer.invoke('reveal-photo', id),
+  showFloat: () => ipcRenderer.invoke('show-float'), showMain: () => ipcRenderer.invoke('show-main'), floatMenu: () => ipcRenderer.invoke('float-menu'),
   onChange: callback => { const listener = () => callback(); ipcRenderer.on('changed', listener); return () => ipcRenderer.removeListener('changed', listener); }
 };
 contextBridge.exposeInMainWorld('desktop', api);

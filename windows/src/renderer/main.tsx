@@ -5,10 +5,25 @@ import './style.css';
 import { PhotoViewer } from './PhotoViewer';
 declare global { interface Window { desktop: DesktopAPI; } }
 
+function FloatingApp() {
+  const [data, setData] = useState<DesktopState>();
+  useEffect(() => {
+    document.body.classList.add('floating-body'); let alive = true; let generation = 0;
+    const refresh = async () => { const request = ++generation; try { const next = await window.desktop.state(); if (alive && request === generation) setData(next); } catch { } };
+    void refresh(); const unsubscribe = window.desktop.onChange(() => { void refresh(); }); const timer = setInterval(() => { void refresh(); }, 5000);
+    return () => { alive = false; unsubscribe(); clearInterval(timer); document.body.classList.remove('floating-body'); };
+  }, []);
+  const photo = data?.photos[0];
+  return <div className="float-window" onDoubleClick={() => void window.desktop.showMain()} onContextMenu={event => { event.preventDefault(); void window.desktop.floatMenu(); }}>
+    <div className="float-drag-strip"/>
+    <div className="float-photo">{photo ? <img key={photo.id} draggable={false} src={`mv-photo://image/${photo.id}`} alt="最新照片"/> : <div className="float-empty">等待手机图片</div>}</div>
+  </div>;
+}
+
 function App() {
-  const [data, setData] = useState<DesktopState>(); const [selected, setSelected] = useState('');
+  const [data, setData] = useState<DesktopState>();
   const [multi, setMulti] = useState(false); const [checked, setChecked] = useState<string[]>([]); const [deleting, setDeleting] = useState(false);
-  const [automatic, setAutomatic] = useState(true); const [error, setError] = useState(''); const [clock, setClock] = useState(Date.now());
+  const [historyPhoto, setHistoryPhoto] = useState<string>(); const [error, setError] = useState(''); const [clock, setClock] = useState(Date.now());
   useEffect(() => {
     let alive = true; let generation = 0;
     const refresh = async () => { const request = ++generation; try { const next = await window.desktop.state(); if (alive && request === generation) setData(next); } catch (e) { if (alive) setError(String(e)); } };
@@ -17,12 +32,11 @@ function App() {
     const networkTimer = setInterval(() => { void refresh(); }, 5000);
     return () => { alive = false; unsubscribe(); clearInterval(timer); clearInterval(networkTimer); };
   }, []);
-  useEffect(() => { if (data?.photos.length && (automatic || !selected)) { setSelected(data.photos[0].id); } }, [data?.photos[0]?.id, automatic]);
-  useEffect(() => { if (!data) return; setChecked(ids => ids.filter(id => data.photos.some(p => p.id === id))); if (selected && !data.photos.some(p => p.id === selected)) setSelected(data.photos[0]?.id || ''); }, [data?.photos]);
+  useEffect(() => { if (!data) return; setChecked(ids => ids.filter(id => data.photos.some(p => p.id === id))); if (historyPhoto && !data.photos.some(p => p.id === historyPhoto)) setHistoryPhoto(undefined); }, [data?.photos]);
   function toggle(id: string) { setChecked(ids => ids.includes(id) ? ids.filter(value => value !== id) : [...ids, id]); }
   async function removeSelected() { setDeleting(true); try { if (await window.desktop.deletePhotos(checked)) { setChecked([]); setMulti(false); } } catch (e) { setError(String(e)); } finally { setDeleting(false); setData(await window.desktop.state()); } }
   async function act(fn: () => Promise<void>) { try { setError(''); await fn(); setData(await window.desktop.state()); } catch (e) { setError(String(e).replace('Error: ', '')); } }
-  const photo = data?.photos.find(p => p.id === selected);
+  const photo = data?.photos[0]; const inspected = data?.photos.find(p => p.id === historyPhoto);
   const connected = !!data?.device && clock - data.device.lastSeen < 30_000;
   const seconds = Math.max(0, Math.ceil(((data?.pairing.expiresAt || 0) - clock) / 1000));
   return <div className="app">
@@ -40,13 +54,14 @@ function App() {
         <section className="card"><div className="section-label">照片保存位置</div><p className="directory" title={data.directory}>{data.directory}</p><div className="button-row"><button onClick={() => void act(window.desktop.chooseDirectory)}>更改目录</button><button onClick={() => void act(window.desktop.openDirectory)}>打开文件夹 ↗</button></div></section>
         <div className="small-note">手机拍照后自动传输原图。电脑保存成功，手机才会收到确认。</div><button onClick={() => void act(window.desktop.exportDiagnostics)}>导出诊断日志</button>
       </aside>
-      <div className="workspace"><section className="card viewer-card"><div className="viewer-toolbar"><div><div className="section-label">照片预览</div><h2>{photo ? '拍摄结果' : '等待第一张照片'}</h2></div><label className="toggle"><input type="checkbox" checked={automatic} onChange={e => setAutomatic(e.target.checked)}/>自动显示新照片</label></div>
-        {photo ? <PhotoViewer key={photo.id} photo={photo} onError={setError} onInteract={() => setAutomatic(false)}/> : <div className="viewer"><div className="empty"><h3>等待第一张照片</h3><p>手机拍照后会自动显示在这里</p></div></div>}
+      <div className="workspace"><section className="card viewer-card"><div className="viewer-toolbar"><div><div className="section-label">最新照片</div><h2>{photo ? '拍摄结果' : '等待第一张照片'}</h2></div><button className="float-button" data-testid="show-float" onClick={() => void window.desktop.showFloat()}>▣ 浮窗</button></div>
+        {photo ? <PhotoViewer key={photo.id} photo={photo} onError={setError}/> : <div className="viewer"><div className="empty"><h3>等待第一张照片</h3><p>手机拍照后会自动显示在这里</p></div></div>}
       </section>
-      <section className="card history"><div className="history-title"><div className="section-label">最近接收 <span className="count">{data.photos.length}</span></div><div className="button-row">{multi ? <><span>已选 {checked.length} 张</span><button disabled={deleting} onClick={() => setChecked(data.photos.map(p => p.id))}>全选当前列表</button><button disabled={deleting || !checked.length} className="danger" onClick={() => void removeSelected()}>{deleting ? "正在删除…" : "删除所选"}</button><button disabled={deleting} onClick={() => { setMulti(false); setChecked([]); }}>取消多选</button></> : <button disabled={!data.photos.length} onClick={() => setMulti(true)}>多选删除</button>}</div></div><div className="thumbnails">{data.photos.length ? data.photos.map(p => <button key={p.id} className={`thumbnail ${(multi ? checked.includes(p.id) : selected === p.id) ? 'selected' : ''}`} disabled={deleting} aria-pressed={multi ? checked.includes(p.id) : selected === p.id} onClick={() => { if (multi) { toggle(p.id); return; } setSelected(p.id);  setAutomatic(false); }} title={`${p.deviceName} · ${p.filename}`}><>{multi && <span className="selection-mark">{checked.includes(p.id) ? "☑" : "☐"}</span>}</><img loading="lazy" src={`mv-photo://thumb/${p.id}`} alt="已接收照片"/><span>{new Date(p.receivedAt).toLocaleTimeString('zh-CN', { hour12: false })}</span></button>) : <p className="muted no-history">接收到的照片会排列在这里</p>}</div></section>
+      <section className="card history"><div className="history-title"><div className="section-label">最近接收 <span className="count">{data.photos.length}</span></div><div className="button-row">{multi ? <><span>已选 {checked.length} 张</span><button disabled={deleting} onClick={() => setChecked(data.photos.map(p => p.id))}>全选当前列表</button><button disabled={deleting || !checked.length} className="danger" onClick={() => void removeSelected()}>{deleting ? "正在删除…" : "删除所选"}</button><button disabled={deleting} onClick={() => { setMulti(false); setChecked([]); }}>取消多选</button></> : <button disabled={!data.photos.length} onClick={() => setMulti(true)}>多选删除</button>}</div></div><div className="thumbnails">{data.photos.length ? data.photos.map((p, index) => <button key={p.id} className={`thumbnail ${(multi ? checked.includes(p.id) : index === 0) ? 'selected' : ''}`} disabled={deleting} aria-pressed={multi ? checked.includes(p.id) : index === 0} onClick={() => { if (multi) { toggle(p.id); return; } setHistoryPhoto(p.id); }} title={`${p.deviceName} · ${p.filename}`}><>{multi && <span className="selection-mark">{checked.includes(p.id) ? "☑" : "☐"}</span>}</><img loading="lazy" src={`mv-photo://thumb/${p.id}`} alt="已接收照片"/><span>{new Date(p.receivedAt).toLocaleTimeString('zh-CN', { hour12: false })}</span></button>) : <p className="muted no-history">接收到的照片会排列在这里</p>}</div></section>
       </div>
     </main>}
+    {inspected && <div className="history-modal" role="dialog" aria-label="历史照片" onClick={() => setHistoryPhoto(undefined)}><div className="history-modal-card" onClick={event => event.stopPropagation()}><button className="history-close" onClick={() => setHistoryPhoto(undefined)}>关闭</button><img src={`mv-photo://image/${inspected.id}`} alt={inspected.filename}/></div></div>}
     <footer><span><span className={`dot ${data?.running ? 'online' : ''}`}/>{data?.running ? '接收服务已就绪' : '正在启动'}</span><span>MobileVision · Windows 预览版 0.1.0</span></footer>
   </div>;
 }
-createRoot(document.getElementById('root')!).render(<App/>);
+createRoot(document.getElementById('root')!).render(new URLSearchParams(location.search).get('mode') === 'float' ? <FloatingApp/> : <App/>);

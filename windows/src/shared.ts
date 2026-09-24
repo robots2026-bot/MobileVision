@@ -13,4 +13,5 @@ export interface DesktopAPI {
   state(): Promise<DesktopState>; chooseDirectory(): Promise<void>; refreshPairing(): Promise<void>;
   selectAddress(address: string): Promise<void>; revoke(): Promise<void>; openDirectory(): Promise<void>;
   revealPhoto(id: string): Promise<void>; onChange(callback: () => void): () => void;
+  showFloat(): Promise<void>; showMain(): Promise<void>; floatMenu(): Promise<void>;
 }

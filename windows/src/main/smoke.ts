@@ -1,7 +1,7 @@
 import { request } from 'node:https';
 import { createHash, randomUUID, X509Certificate } from 'node:crypto';
 import { mkdir, writeFile, rm, readFile } from 'node:fs/promises';
-import { clipboard, ClipboardItem, dialog, type BrowserWindow } from 'electron';
+import { BrowserWindow, clipboard, ClipboardItem, dialog } from 'electron';
 import path from 'node:path';
 import sharp from 'sharp';
 import type { Receiver } from './receiver';
@@ -33,6 +33,24 @@ export async function runSmoke(receiver: Receiver, win: BrowserWindow) {
   const image = await samplePhoto(); const upload = await call(receiver, 'PUT', `/photos/${randomUUID()}`, image, photoHeaders(pair.body.credential, image));
   if (upload.status !== 201) throw new Error(`Smoke upload failed: ${JSON.stringify(upload)}`);
   await waitFor(win, "document.querySelector('.viewer img')?.naturalWidth === 1200 && document.querySelector('.thumbnail img')?.naturalWidth > 0");
+  await win.webContents.executeJavaScript("document.querySelector('[data-testid=\"show-float\"]').click()");
+  let floatWindow: BrowserWindow | undefined;
+  for (let attempt = 0; attempt < 100; attempt++) { floatWindow = BrowserWindow.getAllWindows().find(candidate => candidate !== win); if (floatWindow) break; await new Promise(resolve => setTimeout(resolve, 100)); }
+  if (!floatWindow || !floatWindow.isAlwaysOnTop() || !floatWindow.isResizable()) throw new Error('Floating latest-photo window was not created correctly: ' + JSON.stringify(BrowserWindow.getAllWindows().map(candidate => ({ id: candidate.id, title: candidate.getTitle(), alwaysOnTop: candidate.isAlwaysOnTop(), resizable: candidate.isResizable(), visible: candidate.isVisible(), bounds: candidate.getBounds() }))));
+  await waitFor(floatWindow, "document.querySelector('.float-photo img')?.naturalWidth === 1200");
+  if (await floatWindow.webContents.executeJavaScript("getComputedStyle(document.querySelector('.float-drag-strip')).webkitAppRegion") !== 'drag') throw new Error('Floating window drag strip is not draggable');
+  const requestedBounds = { ...floatWindow.getBounds(), width: 460, height: 310 }; const oldFloatId = floatWindow.id; floatWindow.setBounds(requestedBounds); await new Promise(resolve => setTimeout(resolve, 600)); const resized = floatWindow.getBounds(); floatWindow.close();
+  await win.webContents.executeJavaScript("document.querySelector('[data-testid=\"show-float\"]').click()");
+  floatWindow = undefined;
+  for (let attempt = 0; attempt < 100; attempt++) { floatWindow = BrowserWindow.getAllWindows().find(candidate => candidate !== win && candidate.id !== oldFloatId); if (floatWindow) break; await new Promise(resolve => setTimeout(resolve, 100)); }
+  const restoredBounds = floatWindow?.getBounds();
+  if (!floatWindow || !restoredBounds || Math.abs(restoredBounds.width - resized.width) > 2 || Math.abs(restoredBounds.height - resized.height) > 2) throw new Error('Floating window size was not restored: ' + JSON.stringify({ resized, restoredBounds, windows: BrowserWindow.getAllWindows().map(candidate => ({ id: candidate.id, bounds: candidate.getBounds() })) }));
+  await waitFor(floatWindow, "document.querySelector('.float-photo img')?.naturalWidth === 1200");
+  const secondImage = await sharp(image).tint('#d9e4ff').jpeg({ quality: 90 }).toBuffer(); const secondUpload = await call(receiver, 'PUT', `/photos/${randomUUID()}`, secondImage, photoHeaders(pair.body.credential, secondImage));
+  if (secondUpload.status !== 201) throw new Error(`Second smoke upload failed: ${JSON.stringify(secondUpload)}`);
+  await waitFor(win, `document.querySelector('.viewer img')?.src.endsWith('${secondUpload.body.id}') && document.querySelectorAll('.thumbnail').length === 2`);
+  await waitFor(floatWindow, `document.querySelector('.float-photo img')?.src.endsWith('${secondUpload.body.id}')`);
+  await floatWindow.webContents.capturePage().then(image => writeFile('test-results/windows-float.png', image.toPNG())).catch(error => writeFile('test-results/visual-capture-warning.txt', String(error)));
   await win.webContents.capturePage().then(image => writeFile('test-results/windows-photo.png', image.toPNG())).catch(error => writeFile('test-results/visual-capture-warning.txt', String(error)));
   const bounds = await win.webContents.executeJavaScript("(() => { const r = document.querySelector('.viewer').getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), width: document.querySelector('.viewer img').width }; })()");
   win.webContents.sendInputEvent({ type: 'mouseWheel', x: bounds.x, y: bounds.y, deltaY: 180, deltaX: 0 });
@@ -112,7 +130,7 @@ export async function runSmoke(receiver: Receiver, win: BrowserWindow) {
   await waitFor(win, "document.querySelector('.selection-mark') !== null");
   await win.webContents.executeJavaScript("document.querySelector('.thumbnail').click()");
   await waitFor(win, "document.body.innerText.includes('已选 1 张') && document.querySelector('.thumbnail').getAttribute('aria-pressed') === 'true'");
-  await receiver.deletePhotos([upload.body.id]);
+  await receiver.deletePhotos([upload.body.id, secondUpload.body.id]);
   await waitFor(win, "document.querySelectorAll('.thumbnail').length === 0 && document.querySelector('.viewer img') === null");
   if (details.nodeExposed) throw new Error('Node exposed in renderer');
   await writeFile('test-results/smoke.json', JSON.stringify({ passed: true, versions: process.versions, details }, null, 2));

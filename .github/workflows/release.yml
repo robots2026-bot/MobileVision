@@ -50,4 +50,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" release-files/* --verify-tag --generate-notes --title "MobileVision $TAG"
+          REPOSITORY: ${{ github.repository }}
+        run: gh release create "$TAG" release-files/* --repo "$REPOSITORY" --verify-tag --generate-notes --title "MobileVision $TAG"

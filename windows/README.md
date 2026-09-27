@@ -4,7 +4,7 @@ Android 手机拍照、导入相册或同步书写内容后，Windows 自动接�
 
 ## 启动
 
-已打包程序：`release/win-unpacked/MobileVision.exe`。双击运行即可，不需要安装 Node.js。分发时必须保留整个 `win-unpacked` 文件夹，不能只复制 exe。当前为未签名的开发预览版，尚未制作安装程序。
+开发态免安装程序位于 `release/win-unpacked/MobileVision.exe`，分发时必须保留整个 `win-unpacked` 文件夹。正式发布使用 NSIS 安装程序，文件名为 `MobileVision-Windows-v<版本>-x64.exe`。
 
 在 windows 文件夹中执行开发命令：
 
@@ -56,7 +56,7 @@ TypeScript 检查、2 项接收端集成测试、开发态 Electron 冒烟测试
 
 ## 本次修复
 
-新增 `npm.cmd run installer`，输出 `release/MobileVision Setup 0.1.0.exe`，按用户安装，可选目录，卸载保留应用数据。安装包未签名，尚未在另一台电脑执行安装验收。新增复制连接信息、已配对电脑地址二维码和导出诊断日志；日志持久保存最近 200 条事件代码，不记录凭据、照片、设备名或目录。最新验收见 [项目状态](../PROJECT_STATUS.md)。
+`npm.cmd run installer` 输出 `release/MobileVision-Windows-v0.2.0-x64.exe`，按用户安装，可选目录，卸载保留应用数据。未配置代码签名证书时安装包仍可构建，但可能触发 SmartScreen；正式签名和 GitHub Release 流程见 [发布说明](../docs/RELEASING.md)。诊断日志持久保存最近 200 条事件代码，不记录凭据、照片、设备名或目录。最新验收见 [项目状态](../PROJECT_STATUS.md)。
 
 ## Windows 多选删除
 

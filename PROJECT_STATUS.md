@@ -57,7 +57,7 @@ Debug 应用 APK、仪器测试 APK 构建成功，6 项 JVM 单元测试通过�
 
 ## 可运行文件
 
-- [Windows 安装包](windows/release/MobileVision%20Setup%200.1.0.exe)
+- Windows 0.2.0 安装包：`windows/release/MobileVision-Windows-v0.2.0-x64.exe`（正式发布后由 GitHub Release 提供）
 - [Windows 程序](windows/release/win-unpacked/MobileVision.exe)（须保留整个目录）
 - [Android APK](android/app/build/outputs/apk/debug/MobileVision-Android-0.2.0-debug.apk)
 

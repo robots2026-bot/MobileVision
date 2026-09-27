@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.view.Surface
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -152,7 +153,7 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
                     Surface(modifier = Modifier.size(80.dp).testTag("capture").semantics { contentDescription = "拍照" }, shape = androidx.compose.foundation.shape.CircleShape, color = MaterialTheme.colorScheme.primary, enabled = permission && capture != null && !state.capturing && !state.pairing, onClick = {
                         val camera = capture
                         if (camera != null) vm.beginCapture { id, file ->
-                            camera.targetRotation = (context as? ComponentActivity)?.window?.decorView?.display?.rotation ?: 0
+                            camera.targetRotation = (context as? ComponentActivity)?.window?.decorView?.display?.rotation ?: Surface.ROTATION_0
                             try {
                                 camera.takePicture(ImageCapture.OutputFileOptions.Builder(file).build(), ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageSavedCallback {
                                     override fun onImageSaved(output: ImageCapture.OutputFileResults) { vm.captureFinished(id) }

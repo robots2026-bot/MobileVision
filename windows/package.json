@@ -1,6 +1,6 @@
 {
   "name": "mobilevision-desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Android 拍照与书写，Windows 自动接收与展示",
   "author": "MobileVision",
@@ -21,13 +21,13 @@
     "directories": {
       "output": "release"
     },
+    "artifactName": "MobileVision-Windows-v${version}-${arch}.${ext}",
     "files": [
       "dist/**/*",
       "package.json"
     ],
     "win": {
-      "target": "dir",
-      "signAndEditExecutable": false
+      "target": "dir"
     },
     "nsis": {
       "oneClick": false,

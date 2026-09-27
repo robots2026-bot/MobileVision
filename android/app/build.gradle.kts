@@ -3,6 +3,13 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
+
+val releaseKeystorePath = System.getenv("MOBILEVISION_KEYSTORE_PATH")
+val releaseStorePassword = System.getenv("MOBILEVISION_KEYSTORE_PASSWORD")
+val releaseKeyAlias = System.getenv("MOBILEVISION_KEY_ALIAS")
+val releaseKeyPassword = System.getenv("MOBILEVISION_KEY_PASSWORD")
+val hasReleaseSigning = listOf(releaseKeystorePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.mobilevision.android"
     compileSdk = 35
@@ -10,13 +17,24 @@ android {
         applicationId = "com.mobilevision.android"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
+        versionCode = 2
         versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    signingConfigs {
+        create("release") {
+            if (hasReleaseSigning) {
+                storeFile = file(releaseKeystorePath!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

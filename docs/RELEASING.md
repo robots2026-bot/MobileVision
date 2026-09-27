@@ -4,18 +4,11 @@
 
 Windows `package.json` 与 Android `versionName` 使用相同版本号。Android 每次发布还必须递增 `versionCode`。Git 标签使用 `v<版本号>`，例如 `v0.2.0`。
 
-## GitHub Actions Secrets
+## Android 本地签名
 
-Android 正式安装包必须签名。先在安全位置创建并备份 keystore，然后在 GitHub 仓库的 **Settings → Secrets and variables → Actions** 中配置：
+Android 发布密钥只保存在发布电脑的 `android/.signing` 目录，不上传 GitHub，也不会加入 Git。必须离线备份整个目录；后续版本需要使用同一密钥，手机才能覆盖升级现有应用。
 
-| Secret | 内容 |
-| --- | --- |
-| `ANDROID_KEYSTORE_BASE64` | keystore 文件的 Base64 内容 |
-| `ANDROID_KEYSTORE_PASSWORD` | keystore 密码 |
-| `ANDROID_KEY_ALIAS` | 密钥别名 |
-| `ANDROID_KEY_PASSWORD` | 密钥密码 |
-
-本机已有 `.signing` 目录时，安装并登录 GitHub CLI 后可以从仓库根目录运行 `./scripts/configure-github-secrets.ps1`，一次写入上述四项 Secret。脚本不会输出密码，也不会把签名文件加入 Git。
+发布前在本机配置 `MOBILEVISION_KEYSTORE_PATH`、`MOBILEVISION_KEYSTORE_PASSWORD`、`MOBILEVISION_KEY_ALIAS` 和 `MOBILEVISION_KEY_PASSWORD` 环境变量，再运行 `assembleRelease`。将生成的已签名 APK手动上传到对应 GitHub Release。
 
 Windows 代码签名是可选项。购买代码签名证书后可增加 `CSC_LINK` 和 `CSC_KEY_PASSWORD` Secrets，`electron-builder` 会自动使用它们。没有证书时仍能生成安装包，但 Windows 可能显示 SmartScreen 提示。
 
@@ -30,8 +23,9 @@ Windows 代码签名是可选项。购买代码签名证书后可增加 `CSC_LIN
    git push origin v0.2.0
    ```
 
-4. `Release` 工作流会构建 Windows 安装程序和已签名 Android APK，生成 SHA-256 校验文件，并创建 GitHub Release。
-5. 在一台未安装开发工具的 Windows 电脑和一台真实 Android 手机上完成安装、配对、拍照、相册导入、书写同步和贴图验收。
+4. `Release` 工作流构建 Windows 安装程序并创建 GitHub Release。
+5. 在本机使用保留的 Android 发布密钥构建 APK，将 APK与包含两端安装包校验值的 `SHA256SUMS.txt` 上传到 Release。
+6. 在一台未安装开发工具的 Windows 电脑和一台真实 Android 手机上完成安装、配对、拍照、相册导入、书写同步和贴图验收。
 
 ## 本地预发布检查
 
@@ -46,4 +40,4 @@ cd ..\android
 .\gradlew.bat testDebugUnitTest lintDebug assembleDebug
 ```
 
-本地没有发布签名环境变量时，Android `assembleRelease` 会生成未签名包，该文件不能作为正式安装包发布。
+本地没有发布签名环境变量时，Android `assembleRelease` 会生成未签名包，该文件不能作为正式安装包发布。发布前必须使用 `apksigner verify --verbose --print-certs` 验证 APK。

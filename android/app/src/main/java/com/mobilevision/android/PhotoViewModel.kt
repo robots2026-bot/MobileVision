@@ -68,12 +68,19 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
                 val pairing = Pairing.parse(text)
                 val client = ReceiverApi(pairing.address, pairing.fingerprint)
                 val current = session
-                val result = if (current != null) client.reconnect(current, pairing) else {
+                val freshPair = {
                     val pending = vault.load("pending")?.takeIf { it.computerId == pairing.computerId && it.fingerprint == pairing.fingerprint }
                     val candidate = pending?.copy(address = pairing.address) ?: Session(pairing.address, pairing.computerId, pairing.name, pairing.fingerprint, java.security.SecureRandom().let { random -> ByteArray(32).also { random.nextBytes(it) }.joinToString("") { "%02x".format(it) } })
                     vault.save(candidate, "pending")
                     if (pending != null && runCatching { client.status(candidate) }.isSuccess) candidate else client.pair(pairing, vault.deviceId(), Build.MODEL, candidate.credential)
                 }
+                val result = if (current != null) {
+                    try { client.reconnect(current, pairing) }
+                    catch (error: ApiFailure) {
+                        if (error.code != "UNAUTHORIZED") throw error
+                        freshPair()
+                    }
+                } else freshPair()
                 vault.save(result); vault.clearPending(); session = result; api = client; blocked = false; lastHeartbeat = 0
                 publish("配对成功，拍照后会自动上传", true)
             } catch (error: Exception) { publish(userMessage(error), false) }

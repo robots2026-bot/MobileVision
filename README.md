@@ -2,7 +2,7 @@
 
 用 Android 手机拍照、导入相册或直接手写，图片会通过局域网自动传到 Windows 电脑，并可一键粘贴到当前输入位置。
 
-> 当前版本：`0.2.0`　支持 Windows 10/11 与 Android 10 及以上版本。
+> 当前版本：`0.2.1`　支持 Windows 10/11 与 Android 10 及以上版本。
 
 ## 主要功能
 
@@ -25,7 +25,7 @@
 
 ## 快速开始
 
-1. 从 GitHub Releases 下载 `MobileVision-Windows-v0.2.0-x64.exe` 和 `MobileVision-Android-v0.2.0-release.apk`。
+1. 从 GitHub Releases 下载 `MobileVision-Windows-v0.2.1-x64.exe` 和 `MobileVision-Android-v0.2.1-release.apk`。
 2. 在 Windows 上安装并启动 MobileVision。如 SmartScreen 提示未知发布者，请核对 Release 页面提供的 SHA-256 后再决定是否运行。
 3. 在 Android 上安装 APK，并允许相机、照片访问等必要权限。
 4. 确保手机和电脑连接到同一个局域网。

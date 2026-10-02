@@ -1,3 +1,6 @@
+import { OutgoingFiles } from './outgoing-files';
+import { MessageReceiver } from './messages';
+import { FileReceiver, FileError } from './files';
 import { EventEmitter } from 'node:events';
 import { createServer, type Server } from 'node:https';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -40,10 +43,13 @@ export class Receiver extends EventEmitter {
   public error: string | null = null;
   public readonly computerId: string;
 
-  constructor(public readonly dataDirectory: string, directory: string, private bindHost = '0.0.0.0') {
+  constructor(public readonly dataDirectory: string, directory: string, private bindHost = '0.0.0.0', private fileDirectory = path.join(directory, 'files')) {
     super(); this.directory = directory; this.computerId = '';
   }
 
+  outgoing!: OutgoingFiles;
+  messages!: MessageReceiver;
+  files!: FileReceiver;
   async initialize() {
     await mkdir(this.dataDirectory, { recursive: true });
     await mkdir(this.directory, { recursive: true });
@@ -52,6 +58,9 @@ export class Receiver extends EventEmitter {
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS photos (id TEXT PRIMARY KEY, deviceId TEXT NOT NULL, photoId TEXT NOT NULL, deviceName TEXT NOT NULL, receivedAt TEXT NOT NULL, capturedAt TEXT NOT NULL, bytes INTEGER NOT NULL, hash TEXT NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, filename TEXT NOT NULL, filepath TEXT NOT NULL, temporary TEXT NOT NULL, status TEXT NOT NULL, UNIQUE(deviceId, photoId));`);
     this.db.exec('CREATE TABLE IF NOT EXISTS diagnostics (id INTEGER PRIMARY KEY, time TEXT NOT NULL, event TEXT NOT NULL)');
+    this.files = new FileReceiver(this.dataDirectory, this.fileDirectory, () => this.emit('change')); await this.files.initialize();
+    this.messages = new MessageReceiver(this.dataDirectory, () => this.emit('change'), text => this.emit('copy-text', text));
+    this.outgoing = new OutgoingFiles(this.dataDirectory, () => this.emit('change')); await this.outgoing.initialize();
     this.record('STARTING');
     const savedDirectory = this.setting('directory');
     if (savedDirectory) this.directory = savedDirectory;
@@ -100,6 +109,7 @@ export class Receiver extends EventEmitter {
     await mkdir(directory, { recursive: true }); await access(directory, constants.W_OK);
     this.directory = directory; this.setSetting('directory', directory); this.error = null; this.emit('change');
   }
+  deviceIdentity() { return this.device?.id; }
   photos(): Photo[] { return this.db.prepare("SELECT id,photoId,deviceName,receivedAt,capturedAt,bytes,width,height,filename FROM photos WHERE status IN ('ready','deleting') ORDER BY receivedAt DESC LIMIT 500").all() as unknown as Photo[]; }
   photoPath(id: string) { return (this.db.prepare("SELECT filepath FROM photos WHERE id=? AND status='ready'").get(id) as { filepath: string } | undefined)?.filepath; }
   thumbnail(id: string): Promise<Buffer | undefined> {
@@ -188,6 +198,12 @@ export class Receiver extends EventEmitter {
       }
       const device = this.authenticate(req);
       if (req.url === '/api/v1/status' && req.method === 'GET') { this.reply(res, 200, { version: 1, accepting: !this.active, computerId: this.computerId }); return; }
+      const downloadMatch = /^\/api\/v1\/downloads(?:\/([0-9a-f-]+)\/(chunk|ack))?(?:\?offset=(\d+))?$/.exec(req.url || '');
+      if (downloadMatch && (!downloadMatch[1] || UUID.test(downloadMatch[1]))) { this.reply(res, 200, await this.outgoing.handle(req, device.id, downloadMatch[1], downloadMatch[2] || '', downloadMatch[3] || '')); return; }
+      const textMatch = /^\/api\/v1\/messages(?:\/([0-9a-f-]+)(\/ack)?)?$/.exec(req.url || '');
+      if (textMatch && (!textMatch[1] || UUID.test(textMatch[1]))) { this.reply(res, 200, await this.messages.handle(req, device.id, textMatch[1], !!textMatch[2])); return; }
+      const fileMatch = /^\/api\/v1\/files\/([0-9a-f-]+)(?:\/(chunk|complete))?$/i.exec(req.url || '');
+      if (fileMatch && UUID.test(fileMatch[1])) { this.reply(res, 200, await this.files.handle(req, device.id, fileMatch[1].toLowerCase(), fileMatch[2] || '')); return; }
       const match = /^\/api\/v1\/photos\/([0-9a-f-]+)(\/status)?$/i.exec(req.url || '');
       if (!match || !UUID.test(match[1])) throw new ApiError(404, 'NOT_FOUND');
       const photoId = match[1].toLowerCase();
@@ -198,11 +214,11 @@ export class Receiver extends EventEmitter {
       this.active = true;
       try { await this.upload(req, res, device, photoId, existing); } finally { this.active = false; }
     } catch (error: any) {
-      const code = error instanceof ApiError ? error.code : error.code === 'ENOSPC' ? 'DISK_FULL' : ['EACCES', 'EPERM', 'ENOENT'].includes(error.code) ? 'DIRECTORY_UNAVAILABLE' : 'INTERNAL_ERROR';
+      const code = (error instanceof ApiError || error instanceof FileError) ? error.code : error.code === 'ENOSPC' ? 'DISK_FULL' : ['EACCES', 'EPERM', 'ENOENT'].includes(error.code) ? 'DIRECTORY_UNAVAILABLE' : 'INTERNAL_ERROR';
       this.record(code);
       if (code === 'UNAUTHORIZED') this.failureWindow.count++;
-      if (!(error instanceof ApiError)) { this.error = `接收失败：${code}`; this.emit('change'); }
-      this.reply(res, error instanceof ApiError ? error.status : 500, { error: { code } });
+      if (!((error instanceof ApiError || error instanceof FileError))) { this.error = `接收失败：${code}`; this.emit('change'); }
+      this.reply(res, (error instanceof ApiError || error instanceof FileError) ? error.status : 500, { error: { code } });
       req.resume();
     }
   }
@@ -256,7 +272,7 @@ export class Receiver extends EventEmitter {
     this.stopping = true;
     await this.deletion?.catch(() => undefined);
     if (this.server) await new Promise<void>(resolve => this.server!.close(() => resolve()));
-    this.port = 0; this.db?.close();
+    this.port = 0; this.outgoing?.close(); this.messages?.close(); this.files?.close(); this.db?.close();
   }
 }
 

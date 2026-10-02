@@ -98,3 +98,52 @@ TypeScript 检查及 5 项单元/接收集成测试通过；Electron 操作验�
 ## 2026-09-23 截图操作调整
 
 进入截图模式后拖动框选。双击选区直接将 PNG 图片复制到系统剪贴板；点击保存图标才打开另存为对话框并生成 PNG 文件。双击选区外不会复制。两条路径共用原图像素裁切与方向修正，原照片不变。
+
+
+## 2026-10-02 文件传输开发版
+
+- Android 新增第四个“文件”页面，通过系统多文件选择器导入任意类型，私有暂存、逐个自动上传，显示进度，支持取消、重试和清理完成记录。
+- Windows 新增“照片 / 文件”切换、文件列表、打开/定位和独立目录设置，默认下载目录 MobileVision/日期，同名生成后缀避免覆盖。
+- 复用认证 HTTPS，2 GiB 上限、4 MiB 分块、双端 SQLite 进度恢复、最终大小与 SHA-256 校验。后台暂停后续分块，文件不自动打开或粘贴。
+- 验证：Windows 类型检查、6 项服务端/图片测试通过；设备测试默认跳过，单独指定 PHP110 序列号后通过。Android 9 项 JVM 测试通过，Debug 与仪器测试 APK 构建成功。开发态与独立 Windows 打包程序的窗口冒烟均退出 0，包含文件列表与页面切换。
+- PHP110 隔离仪器测试使用合成二进制、独立接收器和临时手机数据库，确认跨端 4 MiB+137 字节逐字节一致及手机队列恢复；adb reverse 测试映射已移除。未修改正常配对和真实文件。
+- 最新 Android Debug 已保留数据安装，已启动并检查实际“文件”页。现有正常连接显示证书校验失败，尚需在新版 Windows 端重新扫码验证日常连接；系统文件选择器多选、Wi-Fi 中断与 2 GiB 大文件尚未现场验收。
+- Windows 可运行开发版：windows/release/file-transfer-dev/win-unpacked/MobileVision.exe；Android：android/app/build/outputs/apk/debug/MobileVision-Android-0.2.1-debug.apk。版本暂沿用 0.2.1，新增内容标记为未发布，不覆盖已有 GitHub Release。
+- 说明见 docs/FILE_TRANSFER.md。证据：windows/test-results/file-device.txt、windows-files.png、android-files.png 和 smoke.json。
+
+
+## 2026-10-02 双向文本消息开发版
+
+- 两端新增“文本”页，支持多行、空格/缩进、Unicode、64 KiB 文本、复制、主动打开网页链接、本地草稿与清理已送达记录。
+- 手机发送并复制到电脑剪贴板，电脑 Ctrl+Enter 发送。HTTPS 认证与配对复用，双端持久队列和 UUID 去重；手机前台轮询、存盘后确认。清理保留去重记录，不清除未完成任务。
+- Windows 类型检查通过，7 项接收/图片集成测试通过，2 项设备测试默认跳过；文本设备测试单独指定 PHP110 后通过。Android Debug/仪器 APK 构建与 9 项 JVM 测试通过。
+- 开发态和独立打包窗口冒烟均退出 0，验证文本收发、Ctrl+Enter、自动复制剪贴板及消息状态。PHP110 隔离测试验证双向 Unicode/缩进/换行、消息队列重开、重复确认和清理后去重；临时库删除，adb reverse 映射已移除，正式历史与配对保留。
+- Android 新版已保留数据安装、启动并查看文本页。Windows 新版位于 windows/release/text-dev/win-unpacked/MobileVision.exe，原文件开发版窗口已正常关闭，新版窗口已启动。手机正常连接页显示已连接。真实 Wi-Fi 中断恢复、长时间消息积累和键盘/滚动细节仍需现场使用验收。
+- 证据：windows/test-results/text-device.txt、windows-text.png、android-text.png、smoke.json。说明：docs/TEXT_MESSAGES.md。仍为未发布开发构建，不提交或发布 GitHub。
+- 后续界面建议：将照片记录收进拍摄页右上角的相册图标，打开记录面板；底部保留书写、拍摄、文件、文本。本轮仅提出设计，未修改照片记录入口。
+
+
+## 2026-10-02 收起手机照片记录入口
+
+移除底部“照片记录”，保留书写、拍摄、文件、文本四项；拍摄页的“待传 · 已传 · 需处理 ›”状态行可点击进入记录。记录页提供返回拍摄，系统返回键也回到拍摄。照片、副本清理和上传队列逻辑保留。
+
+Android Debug 与仪器测试 APK 构建成功，旧跨端测试入口已适配并编译。新版保留数据安装到 PHP110，实际检查四项导航、状态行进入记录、返回按钮存在，以及系统返回键回到拍摄。未执行需要重置模拟器数据的完整跨端测试。
+
+
+## 2026-10-02 文件双向传输
+
+- 补充 Windows → Android：电脑文件页多选发送、持久暂存快照、进度与取消；手机分块接收、续传、最终校验后通过 MediaStore 保存到下载/MobileVision，提供打开、重试和取消。
+- 接收完成确认可重复，历史清理保留去重记录，不删除手机下载文件；发布期间使用 IS_PENDING，重启恢复避免重复保存。更换配对设备不会发送旧设备任务。
+- Windows 类型检查、8 项集成测试通过；出站专项复测通过。开发态和打包窗口冒烟退出 0，包含电脑文件选择器入队、下载内容和确认状态。Android Debug 与仪器 APK 构建成功，9 项 JVM 测试通过。
+- PHP110 隔离双向测试通过：4 MiB+137 字节、队列重开续传、公共下载保存、重复发布/确认、同名不覆盖、清理后保留去重状态。测试生成的公共文件和临时数据库已清理，adb reverse 映射移除。没有修改真实文件与正式配对。
+- 最新 Android 应用已保留数据安装并启动；Windows 位于 windows/release/transfer-dev/win-unpacked/MobileVision.exe，已正常关闭旧文本开发版并启动该版本。仍未发布，真实 Wi-Fi 中断、2 GiB 文件和第三方文件打开应用待现场验收。
+- 用户提出增加电脑文件页拖入/剪贴板文件接收区，目前仅给出布局建议，尚未实现。现有电脑入口为选择文件按钮。
+
+## 2026-10-02 Windows 拖放与剪贴板文件入口
+
+- 文件页增加独立发送区域，支持多文件拖入、资源管理器复制后 Ctrl+V 或点击粘贴文件；选择文件入口保留，自动入队发送到配对手机。
+- 主进程校验绝对路径、最多 200 个文件与目录拒绝；文字剪贴板提示转到文本页。仅文件页拦截粘贴，页面其它位置拖放不触发发送。
+- 类型检查通过，Windows 测试 9 项通过、2 项设备测试默认跳过；开发态和独立打包窗口冒烟通过，覆盖真实多文件拖放、Ctrl+V、中文与带引号文件名及内容校验。
+- 打包冒烟首次在测试写入剪贴板步骤失败，复测退出 0；没有将首次失败标记为通过。新增入口的真实 Wi-Fi 使用仍待现场验收。
+- Windows 安装包输出目录 windows/release/transfer-input-dev；Android 沿用已验证的 android/app/build/outputs/apk/debug/MobileVision-Android-0.2.1-debug.apk。开发构建仍使用 0.2.1，尚未发布 GitHub Release。
+- 打包结果补充：NSIS 安装程序因依赖下载 connect ETIMEDOUT 未生成；已提供 win-unpacked 可运行目录及 ZIP 分发包，不能将其称为安装程序。Android APK 保持原构建。

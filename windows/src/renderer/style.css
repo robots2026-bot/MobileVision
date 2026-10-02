@@ -22,3 +22,22 @@ button.danger { color: #b42318; border-color: #fda29b; }
 .photo-toolbar { flex-wrap: wrap; gap: 8px; }
 .photo-toolbar > div { flex-wrap: wrap; }
 .capture-message { padding: 8px 16px; font-size: 12px; color: #26724a; overflow-wrap: anywhere; }
+
+.content-tabs button[aria-pressed="true"] { background: #2768d5; color: white; }
+.files-card { padding: 22px; overflow: auto; flex: 1; }
+.file-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid #e0e5ee; padding: 16px 0; }
+.file-row > div:first-child { min-width: 0; flex: 1; }
+.file-row strong { display: block; overflow-wrap: anywhere; }
+.file-row progress { width: 100%; }
+
+.text-card { padding: 20px; display: flex; flex-direction: column; gap: 12px; height: 650px; min-height: 400px; }
+.message-list { flex: 1; overflow-y: auto; min-height: 0; }
+.message { border-radius: 10px; background: #edf2f9; padding: 12px; margin: 8px 0; }
+.message.desktop { background: #e9f5ed; }
+.message pre { font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0; user-select: text; }
+.text-card textarea { font: inherit; padding: 10px; border: 1px solid #dce2eb; border-radius: 8px; resize: vertical; min-height: 80px; }
+
+.file-dropzone { border: 2px dashed #b9c9e5; border-radius: 12px; background: #f5f8ff; padding: 24px; margin: 16px 0; text-align: center; transition: background .15s, border-color .15s; }
+.file-dropzone strong { font-size: 17px; }
+.file-dropzone .button-row { justify-content: center; }
+.file-dropzone.dragging, .file-dropzone:focus-visible { background: #e4edff; border-color: #2768d5; outline: none; }

@@ -94,8 +94,9 @@ class EndToEndTest {
         compose.onNodeWithText("确认连接").performClick()
         waitUntil { SessionVault(context).load()?.address == reconnect.address }
         assertEquals(session.credential, SessionVault(context).load()!!.credential)
-        compose.onNodeWithTag("tab-history").performClick()
-        compose.onNodeWithTag("tab-history").assertIsSelected()
+        compose.onNodeWithTag("photo-history-entry").performClick()
+        compose.onNodeWithTag("tab-camera").assertIsSelected()
+        compose.onNodeWithTag("history-back").assertIsDisplayed()
         compose.onAllNodesWithTag("capture").assertCountEquals(0)
         compose.onNodeWithTag("tab-camera").performClick()
         compose.onNodeWithTag("tab-camera").assertIsSelected()

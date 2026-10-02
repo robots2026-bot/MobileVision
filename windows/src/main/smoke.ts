@@ -1,5 +1,7 @@
 import { request } from 'node:https';
 import { createHash, randomUUID, X509Certificate } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { mkdir, writeFile, rm, readFile } from 'node:fs/promises';
 import { BrowserWindow, clipboard, ClipboardItem, dialog } from 'electron';
 import path from 'node:path';
@@ -127,6 +129,63 @@ export async function runSmoke(receiver: Receiver, win: BrowserWindow) {
   await waitFor(win, "document.body.innerText.includes('已选 1 张') && document.querySelector('.thumbnail').getAttribute('aria-pressed') === 'true'");
   await receiver.deletePhotos([upload.body.id, secondUpload.body.id, thirdUpload.body.id]);
   await waitFor(win, "document.querySelectorAll('.thumbnail').length === 0 && document.querySelector('.viewer img') === null");
+  const fileId = randomUUID(); const payload = Buffer.from('MobileVision 文件传输 smoke'); const auth = { Authorization: `Bearer ${pair.body.credential}` };
+  const metadata = Buffer.from(JSON.stringify({ name: '文档.txt', bytes: payload.length, sha256: createHash('sha256').update(payload).digest('hex') }));
+  await call(receiver, 'POST', `/files/${fileId}`, metadata, auth);
+  await call(receiver, 'PUT', `/files/${fileId}/chunk`, payload, { ...auth, 'X-File-Offset': '0' });
+  const fileResult = await call(receiver, 'POST', `/files/${fileId}/complete`, Buffer.alloc(0), auth); if (fileResult.body.state !== 'ready') throw new Error('File smoke upload failed');
+  await win.webContents.executeJavaScript("[...document.querySelectorAll('.content-tabs button')].find(b => b.textContent === '文件').click()");
+  await waitFor(win, "document.querySelector('.file-row strong')?.textContent === '文档.txt' && !document.querySelector('.file-row button').disabled && document.querySelector('.viewer') === null");
+  const desktopFile = path.resolve('test-results/to-phone.bin'); await writeFile(desktopFile, payload);
+  const originalOpenDialog = dialog.showOpenDialog;
+  try {
+    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [desktopFile] })) as typeof dialog.showOpenDialog;
+    await win.webContents.executeJavaScript("[...document.querySelectorAll('.files-card button')].find(b => b.textContent === '选择文件发送到手机').click()");
+    await waitFor(win, "document.querySelectorAll('.file-row').length === 2 && document.body.innerText.includes('电脑 → 手机')");
+  } finally { dialog.showOpenDialog = originalOpenDialog; }
+  const download = (await call(receiver, 'GET', '/downloads', undefined, auth)).body.files[0]; if (!download || download.name !== 'to-phone.bin') throw new Error('Desktop file picker queue failed');
+  if (!Buffer.from((await call(receiver, 'GET', `/downloads/${download.id}/chunk?offset=0`, undefined, auth)).body.data, 'base64').equals(payload)) throw new Error('Download bytes mismatch');
+  await call(receiver, 'POST', `/downloads/${download.id}/ack`, Buffer.from(JSON.stringify({ offset: payload.length, complete: true, canceled: false, sha256: createHash('sha256').update(payload).digest('hex') })), auth);
+  await waitFor(win, "[...document.querySelectorAll('.file-row button')].every(b => !b.disabled)");
+  const droppedFile = path.resolve('test-results/拖入文件.bin'); const secondDrop = path.resolve('test-results/drop-second.bin'); await writeFile(droppedFile, payload); await writeFile(secondDrop, payload);
+  win.webContents.debugger.attach('1.3');
+  try {
+    await win.webContents.executeJavaScript("(() => { const input = document.createElement('input'); input.type = 'file'; input.multiple = true; input.id = 'smoke-drop-input'; input.hidden = true; document.body.appendChild(input); })()");
+    const doc = await win.webContents.debugger.sendCommand('DOM.getDocument'); const node = await win.webContents.debugger.sendCommand('DOM.querySelector', { nodeId: doc.root.nodeId, selector: '#smoke-drop-input' });
+    await win.webContents.debugger.sendCommand('DOM.setFileInputFiles', { nodeId: node.nodeId, files: [droppedFile, secondDrop] });
+    await win.webContents.executeJavaScript("(() => { const data = new DataTransfer(); for (const file of document.querySelector('#smoke-drop-input').files) data.items.add(file); document.querySelector('.file-dropzone').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data })); })()");
+    await waitFor(win, "document.querySelectorAll('.file-row').length === 4 && document.body.innerText.includes('拖入文件.bin')");
+  } finally { await win.webContents.executeJavaScript("document.querySelector('#smoke-drop-input')?.remove()"); win.webContents.debugger.detach(); }
+  const pastedFile = path.resolve("test-results/paste-文档's.bin"); const secondPaste = path.resolve("test-results/paste-second.bin"); await writeFile(pastedFile, payload); await writeFile(secondPaste, payload);
+  const setFileClipboard = "Add-Type -AssemblyName System.Windows.Forms; $items = [System.Collections.Specialized.StringCollection]::new(); $paths = ConvertFrom-Json $env:MOBILEVISION_CLIPBOARD_TEST_FILES; foreach ($item in $paths) { [void]$items.Add([string]$item) }; [System.Windows.Forms.Clipboard]::SetFileDropList($items)";
+  await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-WindowStyle', 'Hidden', '-Command', setFileClipboard], { windowsHide: true, timeout: 10000, env: { ...process.env, MOBILEVISION_CLIPBOARD_TEST_FILES: JSON.stringify([pastedFile, secondPaste]) } });
+  win.showInactive();
+  await win.webContents.executeJavaScript("document.querySelector('.file-dropzone').focus()");
+  win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'V', modifiers: ['control'] }); win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'V', modifiers: ['control'] });
+  await waitFor(win, `document.querySelectorAll('.file-row').length === 6 && document.body.innerText.includes("paste-文档's.bin")`);
+  const pendingDownloads = receiver.outgoing.list().filter(f => f.state === 'pending'); if (pendingDownloads.length !== 4) throw new Error('Drop or paste created duplicate tasks');
+  for (const pending of pendingDownloads) { const bytes = (await call(receiver, 'GET', `/downloads/${pending.id}/chunk?offset=0`, undefined, auth)).body.data; if (!Buffer.from(bytes, 'base64').equals(payload)) throw new Error('File ingress changed bytes'); }
+  await clipboard.writeText('纯文字'); await win.webContents.executeJavaScript("[...document.querySelectorAll('.file-dropzone button')].find(b => b.textContent === '粘贴文件').click()");
+  await waitFor(win, "document.body.innerText.includes('剪贴板里是文字')");
+  if (receiver.outgoing.list().length !== 5) throw new Error('Text clipboard incorrectly queued a file');
+  await win.webContents.executeJavaScript("[...document.querySelectorAll('.alert button')].find(b => b.textContent === '知道了').click()");
+  await new Promise(resolve => setTimeout(resolve, 500));
+  await writeFile('test-results/windows-files.png', (await win.webContents.capturePage()).toPNG());
+  await win.webContents.executeJavaScript("[...document.querySelectorAll('.content-tabs button')].find(b => b.textContent === '照片').click()");
+  await waitFor(win, "document.querySelector('.viewer') !== null && document.querySelector('.files-card') === null");
+  const messageId = randomUUID(); const text = '测试消息\n  保留空格与换行 😀';
+  const messageResult = await call(receiver, 'POST', `/messages/${messageId}`, Buffer.from(JSON.stringify({ text, copy: true })), auth);
+  if (messageResult.body.state !== 'delivered' || await clipboard.readText() !== text) throw new Error('Text receive/copy failed');
+  await win.webContents.executeJavaScript("[...document.querySelectorAll('.content-tabs button')].find(b => b.textContent === '文本').click()");
+  await waitFor(win, "document.querySelector('.message pre')?.textContent.includes('测试消息')");
+  await win.webContents.executeJavaScript("(() => { const e = document.querySelector('textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(e, '电脑发送\\n第二行'); e.dispatchEvent(new Event('input', { bubbles: true })); })()");
+  await waitFor(win, "!document.querySelector('.text-card .button-row button').disabled");
+  await win.webContents.executeJavaScript("document.querySelector('textarea').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }))");
+  await waitFor(win, "document.querySelectorAll('.message').length === 2 && document.querySelector('textarea').value === ''");
+  const outgoing = await call(receiver, 'GET', '/messages', undefined, auth); if (outgoing.body.messages[0]?.text !== '电脑发送\n第二行') throw new Error('Text UI send failed');
+  await call(receiver, 'POST', `/messages/${outgoing.body.messages[0].id}/ack`, Buffer.alloc(0), auth);
+  await waitFor(win, "[...document.querySelectorAll('.message .muted')].every(e => e.textContent.includes('已送达'))");
+  await new Promise(resolve => setTimeout(resolve, 500)); await writeFile('test-results/windows-text.png', (await win.webContents.capturePage()).toPNG());
   if (details.nodeExposed) throw new Error('Node exposed in renderer');
   await writeFile('test-results/smoke.json', JSON.stringify({ passed: true, versions: process.versions, details }, null, 2));
 }

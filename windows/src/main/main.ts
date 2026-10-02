@@ -1,3 +1,4 @@
+import { validateFilePaths, clipboardFilePaths } from './file-input';
 import { app, BrowserWindow, dialog, ipcMain, protocol, net, shell, clipboard, ClipboardItem } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -19,10 +20,18 @@ if (!single) app.quit();
 let win: BrowserWindow | undefined; let receiver: Receiver | undefined; let closing = false; let exitCode = 0; let selectedAddress = '';
 const uiPath = path.join(__dirname, '../renderer/index.html');
 
+let preparingSend = false;
+async function enqueueFiles(value: unknown) {
+  if (preparingSend) throw new Error('正在准备文件，请稍后再添加');
+  const device = receiver!.deviceIdentity(); if (!device) throw new Error('请先配对手机');
+  const files = validateFilePaths(value); preparingSend = true;
+  try { const failures: string[] = []; for (const filename of files) { try { await receiver!.outgoing.add(device, filename); } catch (error: any) { failures.push(path.basename(filename) + '：' + error.message); } } if (failures.length) throw new Error(failures.join('\n')); }
+  finally { preparingSend = false; }
+}
 async function state(): Promise<DesktopState> {
   const list = addresses(); if (!list.includes(selectedAddress)) selectedAddress = list[0] || '127.0.0.1';
   const pair = receiver!.pairing(selectedAddress);
-  return { directory: receiver!.directory, addresses: list, selectedAddress, port: receiver!.port, running: receiver!.port > 0, pairing: { qr: await QRCode.toDataURL(JSON.stringify(pair), { width: 260, margin: 2, errorCorrectionLevel: 'M' }), expiresAt: pair.expiresAt }, device: receiver!.getDevice(), photos: receiver!.photos(), error: receiver!.error };
+  return { directory: receiver!.directory, addresses: list, selectedAddress, port: receiver!.port, running: receiver!.port > 0, pairing: { qr: await QRCode.toDataURL(JSON.stringify(pair), { width: 260, margin: 2, errorCorrectionLevel: 'M' }), expiresAt: pair.expiresAt }, device: receiver!.getDevice(), messages: receiver!.messages.list(), filesDirectory: receiver!.files.directory, files: [...receiver!.files.list(), ...receiver!.outgoing.list()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 500), photos: receiver!.photos(), error: receiver!.error };
 }
 function handler(name: string, callback: (...args: any[]) => any) {
   ipcMain.handle(name, (event, ...args) => {
@@ -48,7 +57,7 @@ async function pastePhoto(id: string) {
 }
 
 if (single) app.whenReady().then(async () => {
-  receiver = new Receiver(app.getPath('userData'), testing ? path.join(app.getPath('userData'), 'photos') : path.join(app.getPath('pictures'), 'MobileVision'), testing ? '127.0.0.1' : '0.0.0.0');
+  receiver = new Receiver(app.getPath('userData'), testing ? path.join(app.getPath('userData'), 'photos') : path.join(app.getPath('pictures'), 'MobileVision'), testing ? '127.0.0.1' : '0.0.0.0', path.join(testing ? app.getPath('userData') : app.getPath('downloads'), 'MobileVision'));
   await receiver.initialize();
   receiver.on('change', () => { if (win && !win.isDestroyed()) win.webContents.send('changed'); });
   receiver.on('paste', (id: string) => { void pastePhoto(id).catch(error => console.error('Paste failed', error)); });
@@ -60,6 +69,11 @@ if (single) app.whenReady().then(async () => {
       const filename = receiver!.photoPath(id); return filename ? net.fetch(pathToFileURL(filename).toString()) : new Response(null, { status: 404 });
     } catch { return new Response(null, { status: 404 }); }
   });
+  receiver.on('copy-text', (text: string) => clipboard.writeText(text));
+  handler('open-text-link', async (value: unknown) => { if (typeof value !== 'string') throw new Error('无效链接'); const url = new URL(value); if (!['http:', 'https:'].includes(url.protocol)) throw new Error('仅支持网页链接'); await shell.openExternal(url.toString()); });
+  handler('send-text', (text: unknown) => { const device = receiver!.deviceIdentity(); if (!device) throw new Error('请先配对手机'); receiver!.messages.send(device, text); });
+  handler('copy-text', (id: unknown) => { if (typeof id !== 'string') throw new Error('无效消息'); const text = receiver!.messages.text(id); if (text === undefined) throw new Error('消息不存在'); clipboard.writeText(text); });
+  handler('clean-messages', () => receiver!.messages.clean());
   handler('state', state);
   handler('copy-crop', async (id: unknown, region: any) => {
     if (typeof id !== 'string') throw new Error('无效照片');
@@ -89,6 +103,14 @@ if (single) app.whenReady().then(async () => {
     if (!result.canceled && result.filePath) await writeFile(result.filePath, JSON.stringify({ version: app.getVersion(), platform: process.platform, ...receiver!.diagnostics() }, null, 2));
   });
   handler('choose-directory', async () => { const result = await dialog.showOpenDialog(win!, { properties: ['openDirectory', 'createDirectory'] }); if (!result.canceled) await receiver!.setDirectory(result.filePaths[0]); });
+  handler('send-file-paths', (value: unknown) => enqueueFiles(value));
+  handler('paste-files', async () => { if (!receiver!.deviceIdentity()) throw new Error('请先配对手机'); await enqueueFiles(await clipboardFilePaths()); });
+  handler('send-files', async () => { if (!receiver!.deviceIdentity()) throw new Error('请先配对手机'); const result = await dialog.showOpenDialog(win!, { title: '发送文件到手机', properties: ['openFile', 'multiSelections'] }); if (!result.canceled) await enqueueFiles(result.filePaths); });
+  handler('cancel-send-file', (id: unknown) => { if (typeof id !== 'string') throw new Error('无效文件'); return receiver!.outgoing.cancel(id); });
+  handler('choose-files-directory', async () => { const result = await dialog.showOpenDialog(win!, { properties: ['openDirectory', 'createDirectory'] }); if (!result.canceled) await receiver!.files.setDirectory(result.filePaths[0]); });
+  handler('open-files-directory', async () => { const error = await shell.openPath(receiver!.files.directory); if (error) throw new Error(error); });
+  handler('open-file', async (id: unknown) => { if (typeof id !== 'string') throw new Error('无效文件'); const filename = receiver!.files.filePath(id) || receiver!.outgoing.original(id); if (!filename) throw new Error('文件尚未接收完成'); const error = await shell.openPath(filename); if (error) throw new Error(error); });
+  handler('reveal-file', (id: unknown) => { if (typeof id !== 'string') throw new Error('无效文件'); const filename = receiver!.files.filePath(id) || receiver!.outgoing.original(id); if (!filename) throw new Error('文件尚未接收完成'); shell.showItemInFolder(filename); });
   handler('refresh-pairing', () => receiver!.refreshPairing());
   handler('select-address', (address: unknown) => { if (typeof address !== 'string' || !addresses().includes(address)) throw new Error('无效网卡地址'); selectedAddress = address; receiver!.refreshPairing(); });
   handler('revoke', async () => { const result = await dialog.showMessageBox(win!, { type: 'question', message: '解除手机配对？', detail: '解除后，手机需要重新扫码才能继续上传。已接收的照片会保留。', buttons: ['取消', '解除配对'], defaultId: 0, cancelId: 0 }); if (result.response === 1) receiver!.revoke(); });

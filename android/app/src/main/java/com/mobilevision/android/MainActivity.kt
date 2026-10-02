@@ -67,6 +67,8 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
     var permission by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
     var connectionDetails by remember { mutableStateOf(false) }
     var historyPage by remember { mutableIntStateOf(0) }
+    var textPage by remember { mutableStateOf(false) }
+    var filesPage by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf(false) }
     var writing by remember { mutableStateOf(true) }
     var writingLandscape by rememberSaveable { mutableStateOf(false) }
@@ -79,6 +81,7 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
     var selectedPhoto by remember { mutableStateOf<String?>(null) }
     var pendingPair by remember { mutableStateOf<String?>(null) }; var confirmation by remember { mutableStateOf("") }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { permission = it; cameraError = if (it) "" else "需要相机权限才能扫码和拍照" }
+    val filesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> vm.importFiles(uris) }
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let(vm::importPhoto) }
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val writingFullScreen = writing && writingLandscape && LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -106,15 +109,17 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
     fun proposePair(text: String) {
         try { Pairing.parse(text); pendingPair = text; scan = false; cameraError = "" } catch (_: Exception) { scan = false; cameraError = "这不是有效的 MobileVision 配对二维码，请刷新后重试" }
     }
+    androidx.activity.compose.BackHandler(enabled = history) { history = false }
     val pending = state.photos.count { it.state == "pending" || it.state == "uploading" }
     val sent = state.photos.count { it.state == "sent" }
     val failed = state.photos.count { it.state == "failed" || it.state == "capture_failed" }
     Scaffold(modifier = Modifier.fillMaxSize(), bottomBar = {
         if (!writingFullScreen) Surface(shadowElevation = 6.dp) { Column {
             NavigationBar {
-                NavigationBarItem(selected = writing, onClick = { writing = true; history = false; scan = false }, enabled = !state.capturing, icon = { WritingIcon() }, label = { Text("书写") }, modifier = Modifier.testTag("tab-writing"))
-                NavigationBarItem(selected = !history && !writing, onClick = { history = false; writing = false }, enabled = !state.capturing, icon = { PageIcon(false) }, label = { Text("拍摄") }, modifier = Modifier.testTag("tab-camera"))
-                NavigationBarItem(selected = history, onClick = { history = true; writing = false; scan = false }, enabled = !state.capturing, icon = { PageIcon(true) }, label = { Text("照片记录") }, modifier = Modifier.testTag("tab-history"))
+                NavigationBarItem(selected = writing, onClick = { textPage = false; filesPage = false; writing = true; history = false; scan = false }, enabled = !state.capturing, icon = { WritingIcon() }, label = { Text("书写") }, modifier = Modifier.testTag("tab-writing"))
+                NavigationBarItem(selected = !writing && !filesPage && !textPage, onClick = { textPage = false; filesPage = false; history = false; writing = false }, enabled = !state.capturing, icon = { PageIcon(false) }, label = { Text("拍摄") }, modifier = Modifier.testTag("tab-camera"))
+                NavigationBarItem(selected = filesPage, onClick = { textPage = false; filesPage = true; writing = false; history = false; scan = false; writingLandscape = false }, enabled = !state.capturing, icon = { FilePageIcon() }, label = { Text("文件") }, modifier = Modifier.testTag("tab-files"))
+                NavigationBarItem(selected = textPage, enabled = !state.capturing, onClick = { textPage = true; filesPage = false; writing = false; history = false; scan = false; writingLandscape = false }, icon = { Text("T", style = MaterialTheme.typography.titleLarge) }, label = { Text("文本") }, modifier = Modifier.testTag("tab-text"))
             }
         } }
     }) { padding ->
@@ -126,7 +131,11 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
                     Text("  设置 ›", style = MaterialTheme.typography.labelLarge)
                 }
             }
-            if (writing) {
+            if (textPage) {
+                TextPanel(state, vm::sendText, vm::retryText, vm::cleanMessages)
+            } else if (filesPage) {
+                FileTransferPanel(state, { filesLauncher.launch(arrayOf("*/*")) }, vm::cancelFile, vm::retryFile, vm::cleanFiles, vm::openReceivedFile)
+            } else if (writing) {
                 WritingPanel(writingDocument, state.capturing, state.session != null, writingFullScreen, { writingLandscape = !writingLandscape }, vm::syncWriting)
             } else if (!history) {
                 if ((state.session != null || scan) && permission) {
@@ -146,7 +155,10 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
                     TextButton(onClick = { scan = false }) { Text("取消扫码") }
                 }
                 if (cameraError.isNotEmpty()) Text(cameraError, color = MaterialTheme.colorScheme.error, maxLines = 2)
-                Text("待传 " + pending + " · 已传 " + sent + if (failed > 0) " · 需处理 " + failed else "", modifier = Modifier.testTag("queue-summary").padding(bottom = 4.dp), style = MaterialTheme.typography.bodySmall)
+                Row(Modifier.fillMaxWidth().testTag("photo-history-entry").clickable(enabled = !state.capturing && !scan, role = androidx.compose.ui.semantics.Role.Button) { history = true; historyPage = 0 }.semantics { contentDescription = "查看照片记录" }.padding(vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text("待传 " + pending + " · 已传 " + sent + if (failed > 0) " · 需处理 " + failed else "", modifier = Modifier.weight(1f).testTag("queue-summary"), style = MaterialTheme.typography.bodySmall)
+                    Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             if (state.session != null && !scan && !history) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     OutlinedIconButton(modifier = Modifier.size(52.dp).testTag("import-gallery").semantics { contentDescription = "导入相册" }, enabled = !state.capturing && !state.pairing, onClick = { galleryLauncher.launch("image/*") }) { GalleryImportIcon() }
@@ -168,7 +180,10 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
 
             } else {
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("照片记录", style = MaterialTheme.typography.titleLarge)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text("照片记录", style = MaterialTheme.typography.titleLarge)
+                        TextButton(onClick = { history = false }, modifier = Modifier.testTag("history-back")) { Text("返回拍摄") }
+                    }
                     Text("待传 " + pending + " · 已传 " + sent + " · 需处理 " + failed, modifier = Modifier.testTag("queue-summary"))
                     if (state.photos.isEmpty()) Text("还没有照片，点击底部“拍摄”开始。")
                     if (state.photos.any { it.computerId != state.session?.computerId && it.state != "sent" }) Text("其他电脑的待传照片会保留，连接原电脑后再发送。")
@@ -199,7 +214,7 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(state.session?.name ?: "请打开 Windows 端，显示配对二维码")
             Text(state.message, modifier = Modifier.testTag("status"))
-            Button(onClick = { connectionDetails = false; history = false; writing = false; cameraError = ""; scan = true; if (!permission) permissionLauncher.launch(Manifest.permission.CAMERA) }, enabled = state.ready && !state.pairing && !state.capturing) { Text(if (state.session == null) "扫描二维码" else "扫码更新地址") }
+            Button(onClick = { connectionDetails = false; textPage = false; filesPage = false; history = false; writing = false; cameraError = ""; scan = true; if (!permission) permissionLauncher.launch(Manifest.permission.CAMERA) }, enabled = state.ready && !state.pairing && !state.capturing) { Text(if (state.session == null) "扫描二维码" else "扫码更新地址") }
             OutlinedButton(onClick = { connectionDetails = false; paste = true }, enabled = state.ready && !state.pairing && !state.capturing) { Text("粘贴配对信息") }
             if (state.session != null) {
                 TextButton(onClick = { vm.retry() }, enabled = !state.pairing) { Text("重新连接 / 重试") }

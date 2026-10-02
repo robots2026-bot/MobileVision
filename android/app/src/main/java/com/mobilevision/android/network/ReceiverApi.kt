@@ -67,8 +67,9 @@ class ReceiverApi(private val address: String, private val fingerprint: String) 
         headers.forEach { (key, value) -> builder.header(key, value) }
         client.newCall(builder.build()).execute().use { response ->
             val source = response.body?.source() ?: throw ApiFailure("EMPTY_RESPONSE", false)
-            source.request(65537)
-            if (source.buffer.size > 65536) throw ApiFailure("RESPONSE_TOO_LARGE", false)
+            val responseLimit = if (path.startsWith("/downloads/") && path.contains("/chunk?")) 6L * 1024 * 1024 else 524288L
+            source.request(responseLimit + 1)
+            if (source.buffer.size > responseLimit) throw ApiFailure("RESPONSE_TOO_LARGE", false)
             val json = try { JSONObject(source.readUtf8()) } catch (_: Exception) { throw ApiFailure("INVALID_RESPONSE", false) }
             if (!response.isSuccessful) {
                 val code = json.optJSONObject("error")?.optString("code") ?: "HTTP_" + response.code
@@ -95,6 +96,16 @@ class ReceiverApi(private val address: String, private val fingerprint: String) 
         val json = request("GET", "/status", session.credential)
         if (json.optString("computerId") != session.computerId) throw ApiFailure("COMPUTER_CHANGED", false)
     }
+    fun sendText(session: Session, id: String, text: String, copy: Boolean): JSONObject = request("POST", "/messages/$id", session.credential, JSONObject().put("text", text).put("copy", copy).toString().toRequestBody("application/json".toMediaType()))
+    fun messages(session: Session): JSONObject = request("GET", "/messages", session.credential)
+    fun acknowledgeText(session: Session, id: String): JSONObject = request("POST", "/messages/$id/ack", session.credential, ByteArray(0).toRequestBody())
+    fun downloads(session: Session): JSONObject = request("GET", "/downloads", session.credential)
+    fun downloadChunk(session: Session, id: String, offset: Long): JSONObject = request("GET", "/downloads/$id/chunk?offset=$offset", session.credential)
+    fun acknowledgeDownload(session: Session, id: String, offset: Long, complete: Boolean = false, canceled: Boolean = false, hash: String = ""): JSONObject = request("POST", "/downloads/$id/ack", session.credential, JSONObject().put("offset", offset).put("complete", complete).put("canceled", canceled).put("sha256", hash).toString().toRequestBody("application/json".toMediaType()))
+    fun prepareFile(session: Session, id: String, name: String, bytes: Long, hash: String): JSONObject = request("POST", "/files/$id", session.credential, JSONObject().put("name", name).put("bytes", bytes).put("sha256", hash).toString().toRequestBody("application/json".toMediaType()))
+    fun fileChunk(session: Session, id: String, offset: Long, bytes: ByteArray): JSONObject = request("PUT", "/files/$id/chunk", session.credential, bytes.toRequestBody("application/octet-stream".toMediaType()), mapOf("X-File-Offset" to offset.toString()))
+    fun completeFile(session: Session, id: String): JSONObject = request("POST", "/files/$id/complete", session.credential, ByteArray(0).toRequestBody())
+    fun cancelFile(session: Session, id: String): JSONObject = request("DELETE", "/files/$id", session.credential)
     fun upload(session: Session, id: String, file: File, capturedAt: String, hash: String, paste: Boolean = false) {
         val png = file.inputStream().use { input -> val signature = ByteArray(8); input.read(signature) == 8 && signature.contentEquals(byteArrayOf(-119, 80, 78, 71, 13, 10, 26, 10)) }
         val response = request("PUT", "/photos/" + id, session.credential, file.asRequestBody((if (png) "image/png" else "image/jpeg").toMediaType()), mapOf("X-Content-Sha256" to hash, "X-Captured-At" to capturedAt, "X-Paste-After-Receive" to if (paste) "1" else "0"))

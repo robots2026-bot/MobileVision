@@ -147,3 +147,9 @@ Android Debug 与仪器测试 APK 构建成功，旧跨端测试入口已适配�
 - 打包冒烟首次在测试写入剪贴板步骤失败，复测退出 0；没有将首次失败标记为通过。新增入口的真实 Wi-Fi 使用仍待现场验收。
 - Windows 安装包输出目录 windows/release/transfer-input-dev；Android 沿用已验证的 android/app/build/outputs/apk/debug/MobileVision-Android-0.2.1-debug.apk。开发构建仍使用 0.2.1，尚未发布 GitHub Release。
 - 打包结果补充：NSIS 安装程序因依赖下载 connect ETIMEDOUT 未生成；已提供 win-unpacked 可运行目录及 ZIP 分发包，不能将其称为安装程序。Android APK 保持原构建。
+
+## 2026-10-02 升级 0.3.0 并重新打包
+
+- Windows package.json / package-lock 根版本改为 0.3.0；Android versionName=0.3.0、versionCode=4。更新 README 与 0.3.0 更新记录。
+- Windows installer 构建退出 0，生成 windows/release/v0.3.0/MobileVision-Windows-v0.3.0-x64.exe；Android assembleDebug 成功，生成 android/app/build/outputs/apk/debug/MobileVision-Android-0.3.0-debug.apk。
+- 本次仅修改版本与文档，未重新执行功能/现场测试；未安装新版到手机，未上传 GitHub。Android 仍为 Debug 签名包。

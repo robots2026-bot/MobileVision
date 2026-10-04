@@ -1,6 +1,6 @@
 {
   "name": "mobilevision-desktop",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "private": true,
   "description": "Android 拍照与书写，Windows 自动接收与展示",
   "author": "MobileVision",

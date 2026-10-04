@@ -43,7 +43,7 @@ function handler(name: string, callback: (...args: any[]) => any) {
 
 async function createMainWindow(show = true) {
   if (win && !win.isDestroyed()) { if (win.isMinimized()) win.restore(); if (show) { win.show(); win.focus(); } return win; }
-  win = new BrowserWindow({ width: 1260, height: 850, minWidth: 1000, minHeight: 700, show, backgroundColor: '#f4f6f9', title: 'MobileVision · 手机图片助手', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  win = new BrowserWindow({ width: 1260, height: 850, minWidth: 1000, minHeight: 700, show, titleBarStyle: 'hidden', titleBarOverlay: { color: '#fbfcfe', symbolColor: '#536178', height: 44 }, backgroundColor: '#f4f6f9', title: 'MobileVision · 手机图片助手', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' })); win.webContents.on('will-navigate', event => event.preventDefault()); win.on('closed', () => { win = undefined; });
   await win.loadFile(uiPath); return win;
 }

@@ -27,10 +27,16 @@ async function waitFor(win: BrowserWindow, expression: string) {
 }
 async function clipboardPngSize() { const item = (await clipboard.read()).find(value => value.types.includes('image/png')); if (!item) return { width: 0, height: 0 }; const info = await sharp(Buffer.from(await ((await item.getType('image/png')) as Blob).arrayBuffer())).metadata(); return { width: info.width || 0, height: info.height || 0 }; }
 export async function runSmoke(receiver: Receiver, win: BrowserWindow) {
+  win.setSize(1000, 700);
   await mkdir('test-results', { recursive: true });
   await rm('test-results/smoke-error.txt', { force: true });
   await waitFor(win, "document.body.innerText.includes('等待第一张照片') && document.querySelector('.qr img')?.naturalWidth > 0");
   await win.webContents.capturePage().then(image => writeFile('test-results/windows-empty.png', image.toPNG())).catch(error => writeFile('test-results/visual-capture-warning.txt', String(error)));
+  await win.webContents.executeJavaScript("[...document.querySelectorAll('button')].find(b => b.textContent === '扫码配对').click()");
+  await waitFor(win, "document.querySelector('.connection-dialog').open");
+  await writeFile('test-results/windows-connection.png', (await win.webContents.capturePage()).toPNG());
+  await win.webContents.executeJavaScript("document.querySelector('.connection-dialog').close()");
+  await waitFor(win, "!document.querySelector('.connection-dialog').open");
   const pair = await call(receiver, 'POST', '/pair', Buffer.from(JSON.stringify({ token: receiver.pairing('127.0.0.1').token, deviceId: randomUUID(), deviceName: '模拟 Android 手机' })), { 'Content-Type': 'application/json' });
   if (pair.status !== 201) throw new Error('Smoke pairing failed');
   const image = await samplePhoto(); const upload = await call(receiver, 'PUT', `/photos/${randomUUID()}`, image, photoHeaders(pair.body.credential, image));
@@ -49,6 +55,13 @@ export async function runSmoke(receiver: Receiver, win: BrowserWindow) {
   if (thirdUpload.status !== 201) throw new Error(`Third smoke upload failed: ${JSON.stringify(thirdUpload)}`);
   await waitFor(win, `document.querySelector('.viewer img')?.src.endsWith('${thirdUpload.body.id}') && document.querySelectorAll('.thumbnail').length === 3`);
   await win.webContents.capturePage().then(image => writeFile('test-results/windows-photo.png', image.toPNG())).catch(error => writeFile('test-results/visual-capture-warning.txt', String(error)));
+  for (const trigger of ["[...document.querySelectorAll('.photo-toolbar button')].find(b => b.textContent === '复制').click()", "document.dispatchEvent(new KeyboardEvent('keydown', {key:'c',ctrlKey:true,bubbles:true}))"]) {
+    await clipboard.clear(); await win.webContents.executeJavaScript(trigger);
+    let copied = false;
+    for (let retry = 0; retry < 50; retry++) { const png = await clipboardPngSize(); if (png.width === 1200 && png.height === 800) { copied = true; break; } await new Promise(resolve => setTimeout(resolve, 100)); }
+    if (!copied) throw new Error('Whole-photo copy failed for button or Ctrl+C');
+    await waitFor(win, "!document.querySelector('.photo-toolbar button[title=\"复制整张照片（Ctrl+C）\"]').disabled");
+  }
   const bounds = await win.webContents.executeJavaScript("(() => { const r = document.querySelector('.viewer').getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), width: document.querySelector('.viewer img').width }; })()");
   win.webContents.sendInputEvent({ type: 'mouseWheel', x: bounds.x, y: bounds.y, deltaY: 180, deltaX: 0 });
   await waitFor(win, "document.querySelector('.viewer img').width !== " + bounds.width);
@@ -123,10 +136,35 @@ export async function runSmoke(receiver: Receiver, win: BrowserWindow) {
   if (!cropInfo.width || !cropInfo.height || cropInfo.width < 80 || cropInfo.width > 81 || cropInfo.height < 60 || cropInfo.height > 61) throw new Error('Screenshot coordinates mismatch: ' + JSON.stringify(cropInfo));
   await win.webContents.capturePage().then(image => writeFile('test-results/windows-viewer.png', image.toPNG())).catch(error => writeFile('test-results/visual-capture-warning.txt', String(error)));
   const details = await win.webContents.executeJavaScript("({ title: document.title, previewWidth: document.querySelector('.viewer img').naturalWidth, thumbnails: document.querySelectorAll('.thumbnail').length, nodeExposed: typeof window.require !== 'undefined' })");
+  const historyBounds = await win.webContents.executeJavaScript("[...document.querySelectorAll('.thumbnail')].map(n => { const r = n.getBoundingClientRect(); return { left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom) }; })");
+  win.webContents.sendInputEvent({ type: 'mouseMove', x: historyBounds[0].left + 10, y: historyBounds[0].top + 10 });
+  await waitFor(win, "document.querySelector('.history-hover-preview img')?.naturalWidth === 1200");
+  await new Promise(resolve => setTimeout(resolve, 150));
+  await writeFile('test-results/windows-history-hover.png', (await win.webContents.capturePage()).toPNG());
+  win.webContents.sendInputEvent({ type: 'mouseDown', x: historyBounds[0].left + 2, y: historyBounds[0].top + 2, button: 'left', clickCount: 1 });
+  win.webContents.sendInputEvent({ type: 'mouseMove', x: historyBounds[1].right - 2, y: historyBounds[1].bottom - 2 });
+  await waitFor(win, "document.querySelector('.history-selection-box') !== null && document.body.innerText.includes('已选 2 张')");
+  win.webContents.sendInputEvent({ type: 'mouseUp', x: historyBounds[1].right - 2, y: historyBounds[1].bottom - 2, button: 'left', clickCount: 1 });
+  await waitFor(win, "document.querySelector('.history-selection-box') === null && document.querySelectorAll('.thumbnail[aria-pressed=true]').length === 2");
+  await win.webContents.executeJavaScript("[...document.querySelectorAll('button')].find(b => b.textContent === '取消多选').click(); document.querySelector('.thumbnails').style.width = '150px'");
+  const stripBounds = await win.webContents.executeJavaScript("(() => { const r = document.querySelector('.thumbnails').getBoundingClientRect(); return {x: Math.round(r.left + 50), y: Math.round(r.top + 20)}; })()");
+  win.webContents.sendInputEvent({ type: 'mouseWheel', x: stripBounds.x, y: stripBounds.y, deltaY: -100, deltaX: 0 });
+  await waitFor(win, "document.querySelector('.thumbnails').scrollLeft > 0");
+  await win.webContents.executeJavaScript("document.querySelector('.thumbnails').style.width = ''; document.querySelector('.thumbnails').scrollLeft = 0");
   await win.webContents.executeJavaScript("[...document.querySelectorAll('button')].find(b => b.textContent === '多选删除').click()");
   await waitFor(win, "document.querySelector('.selection-mark') !== null");
   await win.webContents.executeJavaScript("document.querySelector('.thumbnail').click()");
   await waitFor(win, "document.body.innerText.includes('已选 1 张') && document.querySelector('.thumbnail').getAttribute('aria-pressed') === 'true'");
+  const originalDeleteDialog = dialog.showMessageBox; let deletePrompt = false;
+  try {
+    dialog.showMessageBox = (async () => { deletePrompt = true; return { response: 0, checkboxChecked: false }; }) as any;
+    await win.webContents.executeJavaScript("[...document.querySelectorAll('button')].find(b => b.textContent === '删除所选').click()");
+    await waitFor(win, "!document.body.innerText.includes('正在删除')");
+    if (!deletePrompt || receiver.photos().length !== 3) throw new Error('Cancel delete did not preserve photos');
+    dialog.showMessageBox = (async () => ({ response: 1, checkboxChecked: false })) as any;
+    await win.webContents.executeJavaScript("[...document.querySelectorAll('button')].find(b => b.textContent === '删除所选').click()");
+    await waitFor(win, "document.querySelectorAll('.thumbnail').length === 2");
+  } finally { dialog.showMessageBox = originalDeleteDialog; }
   await receiver.deletePhotos([upload.body.id, secondUpload.body.id, thirdUpload.body.id]);
   await waitFor(win, "document.querySelectorAll('.thumbnail').length === 0 && document.querySelector('.viewer img') === null");
   const fileId = randomUUID(); const payload = Buffer.from('MobileVision 文件传输 smoke'); const auth = { Authorization: `Bearer ${pair.body.credential}` };
@@ -140,7 +178,7 @@ export async function runSmoke(receiver: Receiver, win: BrowserWindow) {
   const originalOpenDialog = dialog.showOpenDialog;
   try {
     dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [desktopFile] })) as typeof dialog.showOpenDialog;
-    await win.webContents.executeJavaScript("[...document.querySelectorAll('.files-card button')].find(b => b.textContent === '选择文件发送到手机').click()");
+    await win.webContents.executeJavaScript("[...document.querySelectorAll('.file-dropzone button')].find(b => b.textContent === '选择文件发送到手机').click()");
     await waitFor(win, "document.querySelectorAll('.file-row').length === 2 && document.body.innerText.includes('电脑 → 手机')");
   } finally { dialog.showOpenDialog = originalOpenDialog; }
   const download = (await call(receiver, 'GET', '/downloads', undefined, auth)).body.files[0]; if (!download || download.name !== 'to-phone.bin') throw new Error('Desktop file picker queue failed');

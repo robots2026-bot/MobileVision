@@ -1,5 +1,5 @@
 import { validateFilePaths, clipboardFilePaths } from './file-input';
-import { app, BrowserWindow, dialog, ipcMain, protocol, net, shell, clipboard, ClipboardItem } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, protocol, net, shell, clipboard, ClipboardItem, nativeTheme } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -20,6 +20,15 @@ if (!single) app.quit();
 let win: BrowserWindow | undefined; let receiver: Receiver | undefined; let closing = false; let exitCode = 0; let selectedAddress = '';
 const uiPath = path.join(__dirname, '../renderer/index.html');
 
+function windowThemeColors() { return nativeTheme.shouldUseDarkColors ? { color: '#171d27', symbolColor: '#bfcbdd', background: '#11151c' } : { color: '#fbfcfe', symbolColor: '#536178', background: '#f4f6f9' }; }
+nativeTheme.themeSource = 'system';
+nativeTheme.on('updated', () => {
+  if (!win || win.isDestroyed()) return;
+  const colors = windowThemeColors();
+  win.setTitleBarOverlay({ color: colors.color, symbolColor: colors.symbolColor, height: 44 });
+  win.setBackgroundColor(colors.background);
+});
+
 let preparingSend = false;
 async function enqueueFiles(value: unknown) {
   if (preparingSend) throw new Error('正在准备文件，请稍后再添加');
@@ -31,7 +40,7 @@ async function enqueueFiles(value: unknown) {
 async function state(): Promise<DesktopState> {
   const list = addresses(); if (!list.includes(selectedAddress)) selectedAddress = list[0] || '127.0.0.1';
   const pair = receiver!.pairing(selectedAddress);
-  return { directory: receiver!.directory, addresses: list, selectedAddress, port: receiver!.port, running: receiver!.port > 0, pairing: { qr: await QRCode.toDataURL(JSON.stringify(pair), { width: 260, margin: 2, errorCorrectionLevel: 'M' }), expiresAt: pair.expiresAt }, device: receiver!.getDevice(), messages: receiver!.messages.list(), filesDirectory: receiver!.files.directory, files: [...receiver!.files.list(), ...receiver!.outgoing.list()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 500), photos: receiver!.photos(), error: receiver!.error };
+  return { power: receiver!.power.status(), directory: receiver!.directory, addresses: list, selectedAddress, port: receiver!.port, running: receiver!.port > 0, pairing: { qr: await QRCode.toDataURL(JSON.stringify(pair), { width: 260, margin: 2, errorCorrectionLevel: 'M' }), expiresAt: pair.expiresAt }, device: receiver!.getDevice(), messages: receiver!.messages.list(), filesDirectory: receiver!.files.directory, files: [...receiver!.files.list(), ...receiver!.outgoing.list()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 500), photos: receiver!.photos(), error: receiver!.error };
 }
 function handler(name: string, callback: (...args: any[]) => any) {
   ipcMain.handle(name, (event, ...args) => {
@@ -43,7 +52,8 @@ function handler(name: string, callback: (...args: any[]) => any) {
 
 async function createMainWindow(show = true) {
   if (win && !win.isDestroyed()) { if (win.isMinimized()) win.restore(); if (show) { win.show(); win.focus(); } return win; }
-  win = new BrowserWindow({ width: 1260, height: 850, minWidth: 1000, minHeight: 700, show, titleBarStyle: 'hidden', titleBarOverlay: { color: '#fbfcfe', symbolColor: '#536178', height: 44 }, backgroundColor: '#f4f6f9', title: 'MobileVision · 手机图片助手', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  const colors = windowThemeColors();
+  win = new BrowserWindow({ width: 1260, height: 850, minWidth: 1000, minHeight: 700, show, titleBarStyle: 'hidden', titleBarOverlay: { color: colors.color, symbolColor: colors.symbolColor, height: 44 }, backgroundColor: colors.background, title: 'MobileVision · 手机图片助手', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' })); win.webContents.on('will-navigate', event => event.preventDefault()); win.on('closed', () => { win = undefined; });
   await win.loadFile(uiPath); return win;
 }
@@ -75,6 +85,8 @@ if (single) app.whenReady().then(async () => {
   handler('copy-text', (id: unknown) => { if (typeof id !== 'string') throw new Error('无效消息'); const text = receiver!.messages.text(id); if (text === undefined) throw new Error('消息不存在'); clipboard.writeText(text); });
   handler('clean-messages', () => receiver!.messages.clean());
   handler('state', state);
+  handler('set-power-enabled', (enabled: unknown) => { if (typeof enabled !== 'boolean') throw new Error('无效设置'); receiver!.power.setEnabled(enabled); });
+  handler('cancel-power', () => receiver!.power.cancelPending());
   handler('copy-crop', async (id: unknown, region: any) => {
     if (typeof id !== 'string') throw new Error('无效照片');
     const filename = receiver!.photoPath(id); if (!filename) throw new Error('照片不存在');

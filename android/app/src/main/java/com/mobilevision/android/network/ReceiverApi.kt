@@ -65,7 +65,8 @@ class ReceiverApi(private val address: String, private val fingerprint: String) 
         val builder = Request.Builder().url(address + "/api/v1" + path).method(method, body)
         if (credential.isNotEmpty()) builder.header("Authorization", "Bearer " + credential)
         headers.forEach { (key, value) -> builder.header(key, value) }
-        client.newCall(builder.build()).execute().use { response ->
+        val requestClient = if (path == "/power") client.newBuilder().retryOnConnectionFailure(false).callTimeout(10, TimeUnit.SECONDS).build() else client
+        requestClient.newCall(builder.build()).execute().use { response ->
             val source = response.body?.source() ?: throw ApiFailure("EMPTY_RESPONSE", false)
             val responseLimit = if (path.startsWith("/downloads/") && path.contains("/chunk?")) 6L * 1024 * 1024 else 524288L
             source.request(responseLimit + 1)
@@ -98,6 +99,9 @@ class ReceiverApi(private val address: String, private val fingerprint: String) 
     }
     fun sendText(session: Session, id: String, text: String, copy: Boolean): JSONObject = request("POST", "/messages/$id", session.credential, JSONObject().put("text", text).put("copy", copy).toString().toRequestBody("application/json".toMediaType()))
     fun messages(session: Session): JSONObject = request("GET", "/messages", session.credential)
+    fun powerStatus(session: Session): JSONObject = request("GET", "/power", session.credential)
+    fun power(session: Session, id: String, action: String): JSONObject = request("POST", "/power", session.credential, JSONObject().put("id", id).put("action", action).put("computerId", session.computerId).toString().toRequestBody("application/json".toMediaType()))
+    fun cancelPower(session: Session): JSONObject = request("DELETE", "/power", session.credential)
     fun acknowledgeText(session: Session, id: String): JSONObject = request("POST", "/messages/$id/ack", session.credential, ByteArray(0).toRequestBody())
     fun downloads(session: Session): JSONObject = request("GET", "/downloads", session.credential)
     fun downloadChunk(session: Session, id: String, offset: Long): JSONObject = request("GET", "/downloads/$id/chunk?offset=$offset", session.credential)

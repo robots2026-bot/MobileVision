@@ -31,14 +31,19 @@ fun FilePageIcon() {
 }
 
 @Composable
-fun FileTransferPanel(state: PhotoState, select: () -> Unit, cancel: (String) -> Unit, retry: (String) -> Unit, clean: () -> Unit, open: (String) -> Unit) {
+fun FileTransferPanel(state: PhotoState, select: () -> Unit, cancel: (String) -> Unit, retry: (String) -> Unit, clean: () -> Unit, open: (String) -> Unit, sendShared: () -> Unit) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("文件传输", style = MaterialTheme.typography.titleLarge)
             TextButton(onClick = clean, enabled = state.files.any { it.state in setOf("sent", "canceled", "received") }) { Text("清理完成记录") }
         }
         Button(onClick = select, enabled = state.ready && state.session != null && !state.importing && !state.pairing, modifier = Modifier.fillMaxWidth().testTag("select-files")) { Text(if (state.importing) "正在准备文件…" else "选择文件 · 自动发送") }
-        Text("支持多选，单个文件最大 2 GB。传输时请保持 App 在前台。", style = MaterialTheme.typography.bodySmall)
+        Text("支持多选，单个文件最大 2 GB。也可在其他应用中选择分享 → MobileVision。传输时请保持 App 在前台。", style = MaterialTheme.typography.bodySmall)
+        val waiting = state.files.count { it.direction == "phone" && it.computerId.isEmpty() && it.state == "pending" }
+        if (waiting > 0) {
+            Text("已接收 $waiting 个分享文件，请连接电脑后发送。", style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick = sendShared, enabled = state.session != null && !state.importing && !state.pairing, modifier = Modifier.testTag("send-shared-files")) { Text("发送分享文件到 " + (state.session?.name ?: "电脑")) }
+        }
         Text(state.message, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("file-status"))
         if (state.files.isEmpty()) Text("还没有传输记录，两端都可以选择文件发送。")
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -46,7 +51,7 @@ fun FileTransferPanel(state: PhotoState, select: () -> Unit, cancel: (String) ->
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text((if (f.direction == "desktop") "电脑 → 手机 · " else "手机 → 电脑 · ") + f.name, style = MaterialTheme.typography.titleSmall)
-                        Text(fileSize(f.bytes) + " · " + when (f.state) { "received" -> "已保存到下载/MobileVision"; "receiving" -> "正在接收"; "sent" -> "已传到电脑"; "canceled" -> "已取消"; "canceling" -> "等待电脑确认取消"; "uploading" -> "正在上传"; "failed" -> "需要处理"; else -> if (f.computerId != state.session?.computerId) "等待连接原电脑" else "等待上传" }, style = MaterialTheme.typography.bodySmall)
+                        Text(fileSize(f.bytes) + " · " + when (f.state) { "received" -> "已保存到下载/MobileVision"; "receiving" -> "正在接收"; "sent" -> "已传到电脑"; "canceled" -> "已取消"; "canceling" -> "等待电脑确认取消"; "uploading" -> "正在上传"; "failed" -> "需要处理"; else -> if (f.computerId.isEmpty()) "等待选择电脑发送" else if (f.computerId != state.session?.computerId) "等待连接原电脑" else "等待上传" }, style = MaterialTheme.typography.bodySmall)
                         if (f.state in setOf("pending", "uploading", "receiving")) { LinearProgressIndicator(progress = { if (f.bytes == 0L) 0f else f.offset.toFloat() / f.bytes }, modifier = Modifier.fillMaxWidth()); Text(fileSize(f.offset) + " / " + fileSize(f.bytes), style = MaterialTheme.typography.bodySmall) }
                         if (f.error.isNotEmpty()) Text(f.error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                         Row { if (f.state == "received") TextButton(onClick = { open(f.id) }) { Text("打开") }; if (f.state == "failed") TextButton(onClick = { retry(f.id) }) { Text("重试") }; if (f.state in setOf("pending", "uploading", "receiving", "failed")) TextButton(onClick = { cancel(f.id) }) { Text("取消") } }

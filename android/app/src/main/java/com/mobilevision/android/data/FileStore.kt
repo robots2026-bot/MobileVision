@@ -19,6 +19,10 @@ class FileStore(context: Context) : SQLiteOpenHelper(context, "file-transfers.sq
         buildList { while (c.moveToNext()) add(TransferFile(c.getString(0), c.getString(1), c.getString(2), c.getLong(3), c.getString(4), c.getLong(5), c.getString(6), c.getInt(7), c.getLong(8), c.getString(9))) }
     }
     fun create(id: String, computerId: String, name: String, bytes: Long, hash: String) { writableDatabase.execSQL("INSERT INTO files(id,computerId,name,bytes,hash) VALUES(?,?,?,?,?)", arrayOf(id, computerId, name, bytes, hash)) }
+    fun assignUnassigned(computerId: String): Int {
+        require(computerId.isNotBlank())
+        return writableDatabase.update("files", ContentValues().apply { put("computerId", computerId) }, "computerId='' AND state='pending'", null)
+    }
     fun update(id: String, state: String, offset: Long, attempts: Int = 0, nextAt: Long = 0, error: String = "") {
         val values = ContentValues().apply { put("state", state); put("offset", offset); put("attempts", attempts); put("nextAt", nextAt); put("error", error) }
         writableDatabase.update("files", values, "id=?", arrayOf(id))

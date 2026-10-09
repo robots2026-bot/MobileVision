@@ -41,7 +41,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.ViewModelProvider
 import com.mobilevision.android.camera.CameraPanel
 import com.mobilevision.android.network.Pairing
 import com.mobilevision.android.ui.theme.MobileVisionTheme
@@ -50,22 +50,36 @@ import com.mobilevision.android.writing.WritingPanel
 
 class MainActivity : ComponentActivity() {
     private var model: PhotoViewModel? = null
+    private var shareRequest by mutableIntStateOf(0)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        setContent { MobileVisionTheme { val vm: PhotoViewModel = viewModel(); model = vm; MobileVisionScreen(vm) } }
+        val vm = ViewModelProvider(this)[PhotoViewModel::class.java]
+        model = vm
+        shareRequest = savedInstanceState?.getInt("shareRequest") ?: 0
+        setContent { MobileVisionTheme { MobileVisionScreen(vm, shareRequest) } }
+        if (savedInstanceState == null) receiveShare(intent)
+    }
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); receiveShare(intent) }
+    override fun onSaveInstanceState(outState: Bundle) { outState.putInt("shareRequest", shareRequest); super.onSaveInstanceState(outState) }
+    private fun receiveShare(intent: Intent) {
+        if (intent.action !in setOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE)) return
+        shareRequest++
+        try { model?.importFiles(sharedFileUris(intent), fromShare = true) }
+        catch (error: Exception) { model?.reportShareError(error.message ?: "无法读取分享内容，请在原应用中重新分享") }
     }
     override fun onResume() { super.onResume(); model?.foreground(true) }
     override fun onPause() { model?.foreground(false); super.onPause() }
 }
 
 @Composable
-fun MobileVisionScreen(vm: PhotoViewModel) {
+fun MobileVisionScreen(vm: PhotoViewModel, shareRequest: Int = 0) {
     val state by vm.state.collectAsState()
     val context = LocalContext.current
     var permission by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
     var connectionDetails by remember { mutableStateOf(false) }
+    var powerDetails by remember { mutableStateOf(false) }
     var historyPage by remember { mutableIntStateOf(0) }
     var textPage by remember { mutableStateOf(false) }
     var filesPage by remember { mutableStateOf(false) }
@@ -85,6 +99,9 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let(vm::importPhoto) }
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val writingFullScreen = writing && writingLandscape && LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    LaunchedEffect(shareRequest) {
+        if (shareRequest > 0) { filesPage = true; textPage = false; writing = false; history = false; scan = false; writingLandscape = false; connectionDetails = false; powerDetails = false }
+    }
     LaunchedEffect(writingLandscape, context) {
         (context as? Activity)?.requestedOrientation = if (writingLandscape) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     }
@@ -134,7 +151,7 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
             if (textPage) {
                 TextPanel(state, vm::sendText, vm::retryText, vm::cleanMessages)
             } else if (filesPage) {
-                FileTransferPanel(state, { filesLauncher.launch(arrayOf("*/*")) }, vm::cancelFile, vm::retryFile, vm::cleanFiles, vm::openReceivedFile)
+                FileTransferPanel(state, { filesLauncher.launch(arrayOf("*/*")) }, vm::cancelFile, vm::retryFile, vm::cleanFiles, vm::openReceivedFile, vm::sendUnassignedFiles)
             } else if (writing) {
                 WritingPanel(writingDocument, state.capturing, state.session != null, writingFullScreen, { writingLandscape = !writingLandscape }, vm::syncWriting)
             } else if (!history) {
@@ -214,6 +231,7 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(state.session?.name ?: "请打开 Windows 端，显示配对二维码")
             Text(state.message, modifier = Modifier.testTag("status"))
+            if (state.session != null) OutlinedButton(onClick = { connectionDetails = false; powerDetails = true }, modifier = Modifier.testTag("computer-power")) { Text("电脑管理 · 电源") }
             Button(onClick = { connectionDetails = false; textPage = false; filesPage = false; history = false; writing = false; cameraError = ""; scan = true; if (!permission) permissionLauncher.launch(Manifest.permission.CAMERA) }, enabled = state.ready && !state.pairing && !state.capturing) { Text(if (state.session == null) "扫描二维码" else "扫码更新地址") }
             OutlinedButton(onClick = { connectionDetails = false; paste = true }, enabled = state.ready && !state.pairing && !state.capturing) { Text("粘贴配对信息") }
             if (state.session != null) {
@@ -223,6 +241,7 @@ fun MobileVisionScreen(vm: PhotoViewModel) {
         }
     }, confirmButton = { TextButton(onClick = { connectionDetails = false }) { Text("完成") } })
     selectedPhoto?.let { id -> AlertDialog(onDismissRequest = { selectedPhoto = null }, title = { Text("本地照片") }, text = { LocalPhoto(id, Modifier.fillMaxWidth().height(360.dp)) }, confirmButton = { TextButton(onClick = { selectedPhoto = null }) { Text("关闭") } }) }
+    if (powerDetails) ComputerPowerPanel(state, vm::refreshPower, vm::requestPower, vm::cancelPower) { powerDetails = false }
     if (paste) AlertDialog(onDismissRequest = { paste = false }, title = { Text("配对信息") }, text = { OutlinedTextField(pairText, { if (it.length <= 4096) pairText = it }, modifier = Modifier.testTag("pair-input"), label = { Text("粘贴完整二维码内容") }, maxLines = 6) }, confirmButton = { TextButton(onClick = { paste = false; proposePair(pairText); pairText = "" }) { Text("继续") } }, dismissButton = { TextButton(onClick = { paste = false }) { Text("取消") } })
     pendingPair?.let { raw ->
         val pairing = Pairing.parse(raw)

@@ -1,4 +1,5 @@
 import { OutgoingFiles } from './outgoing-files';
+import { PowerControl, PowerError, executePower } from './power';
 import { MessageReceiver } from './messages';
 import { FileReceiver, FileError } from './files';
 import { EventEmitter } from 'node:events';
@@ -26,6 +27,7 @@ interface Device { id: string; name: string; tokenHash: string; lastSeen: number
 interface Row { id: string; deviceId: string; photoId: string; deviceName: string; receivedAt: string; capturedAt: string; bytes: number; hash: string; width: number; height: number; filename: string; filepath: string; temporary: string; status: string; }
 
 export class Receiver extends EventEmitter {
+  readonly power: PowerControl;
   private db!: DatabaseSync;
   private server?: Server;
   private device: Device | null = null;
@@ -43,8 +45,8 @@ export class Receiver extends EventEmitter {
   public error: string | null = null;
   public readonly computerId: string;
 
-  constructor(public readonly dataDirectory: string, directory: string, private bindHost = '0.0.0.0', private fileDirectory = path.join(directory, 'files')) {
-    super(); this.directory = directory; this.computerId = '';
+  constructor(public readonly dataDirectory: string, directory: string, private bindHost = '0.0.0.0', private fileDirectory = path.join(directory, 'files'), powerExecutor = executePower) {
+    super(); this.directory = directory; this.computerId = ''; this.power = new PowerControl(() => this.emit('change'), powerExecutor);
   }
 
   outgoing!: OutgoingFiles;
@@ -103,7 +105,7 @@ export class Receiver extends EventEmitter {
   refreshPairing() { this.token = randomBytes(24).toString('hex'); this.expiresAt = Date.now() + 300_000; this.emit('change'); }
   pairing(address: string) { return { version: 1, address: `https://${address}:${this.port}`, computerId: this.computerId, computerName: os.hostname(), token: this.device ? '' : this.token, expiresAt: this.device ? 0 : this.expiresAt, certificateSha256: this.fingerprint }; }
   getDevice() { return this.device ? { name: this.device.name, lastSeen: this.device.lastSeen } : null; }
-  revoke() { if (this.active) throw new Error('正在接收照片，请完成后再解除配对'); this.device = null; this.db.prepare("DELETE FROM settings WHERE key='device'").run(); this.refreshPairing(); }
+  revoke() { if (this.active) throw new Error('正在接收照片，请完成后再解除配对'); this.power.dispose(); this.device = null; this.db.prepare("DELETE FROM settings WHERE key='device'").run(); this.refreshPairing(); }
   async setDirectory(directory: string) {
     if (this.active) throw new Error('正在接收照片，请完成后再切换目录');
     await mkdir(directory, { recursive: true }); await access(directory, constants.W_OK);
@@ -197,6 +199,19 @@ export class Receiver extends EventEmitter {
         this.record('PAIRED'); this.reply(res, 201, { credential, computerId: this.computerId, version: 1 }); this.emit('change'); return;
       }
       const device = this.authenticate(req);
+      if (req.url === '/api/v1/power' && req.method === 'GET') { this.reply(res, 200, this.power.status()); return; }
+      if (req.url === '/api/v1/power' && req.method === 'DELETE') { this.power.cancelPending(); this.reply(res, 200, this.power.status()); return; }
+      if (req.url === '/api/v1/power' && req.method === 'POST') {
+        if (this.active) throw new ApiError(409, 'RECEIVER_BUSY');
+        let text = ''; for await (const chunk of req) { text += chunk; if (Buffer.byteLength(text) > 1024) throw new ApiError(413, 'FILE_TOO_LARGE'); }
+        let body: any; try { body = JSON.parse(text); } catch { throw new ApiError(400, 'INVALID_JSON'); }
+        if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ApiError(400, 'INVALID_JSON');
+        if (body.computerId !== this.computerId) throw new ApiError(409, 'COMPUTER_CHANGED');
+        // Revalidate after reading the body: unpairing must invalidate in-flight commands.
+        this.authenticate(req);
+        this.power.schedule(body.id, body.action);
+        this.reply(res, 202, this.power.status()); return;
+      }
       if (req.url === '/api/v1/status' && req.method === 'GET') { this.reply(res, 200, { version: 1, accepting: !this.active, computerId: this.computerId }); return; }
       const downloadMatch = /^\/api\/v1\/downloads(?:\/([0-9a-f-]+)\/(chunk|ack))?(?:\?offset=(\d+))?$/.exec(req.url || '');
       if (downloadMatch && (!downloadMatch[1] || UUID.test(downloadMatch[1]))) { this.reply(res, 200, await this.outgoing.handle(req, device.id, downloadMatch[1], downloadMatch[2] || '', downloadMatch[3] || '')); return; }
@@ -214,11 +229,11 @@ export class Receiver extends EventEmitter {
       this.active = true;
       try { await this.upload(req, res, device, photoId, existing); } finally { this.active = false; }
     } catch (error: any) {
-      const code = (error instanceof ApiError || error instanceof FileError) ? error.code : error.code === 'ENOSPC' ? 'DISK_FULL' : ['EACCES', 'EPERM', 'ENOENT'].includes(error.code) ? 'DIRECTORY_UNAVAILABLE' : 'INTERNAL_ERROR';
+      const code = (error instanceof ApiError || error instanceof FileError || error instanceof PowerError) ? error.code : error.code === 'ENOSPC' ? 'DISK_FULL' : ['EACCES', 'EPERM', 'ENOENT'].includes(error.code) ? 'DIRECTORY_UNAVAILABLE' : 'INTERNAL_ERROR';
       this.record(code);
       if (code === 'UNAUTHORIZED') this.failureWindow.count++;
-      if (!((error instanceof ApiError || error instanceof FileError))) { this.error = `接收失败：${code}`; this.emit('change'); }
-      this.reply(res, (error instanceof ApiError || error instanceof FileError) ? error.status : 500, { error: { code } });
+      if (!((error instanceof ApiError || error instanceof FileError || error instanceof PowerError))) { this.error = `接收失败：${code}`; this.emit('change'); }
+      this.reply(res, (error instanceof ApiError || error instanceof FileError || error instanceof PowerError) ? error.status : 500, { error: { code } });
       req.resume();
     }
   }
@@ -269,6 +284,7 @@ export class Receiver extends EventEmitter {
     }
   }
   async close() {
+    this.power.dispose();
     this.stopping = true;
     await this.deletion?.catch(() => undefined);
     if (this.server) await new Promise<void>(resolve => this.server!.close(() => resolve()));

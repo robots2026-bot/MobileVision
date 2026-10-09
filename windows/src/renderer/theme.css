@@ -1,0 +1,66 @@
+/* The browser follows Electron's system theme, including changes while running. */
+:root {
+  color-scheme: light dark;
+  --app-bg: #f4f6f9;
+  --surface: #ffffff;
+  --header: #fbfcfe;
+  --text: #233047;
+  --secondary: #536178;
+  --muted: #8591a3;
+  --border: #dce2eb;
+  --hover: #f0f3f9;
+  --accent: #315fe5;
+  --focus: #4169e1;
+  --blue-bg: #edf3ff;
+  --selected-bg: #f0f4ff;
+  --viewer-bg: #e9edf3;
+  --success-bg: #f3faf7;
+  --success: #26724a;
+  --danger: #b42318;
+  --danger-border: #fda29b;
+  --warning-bg: #fff1e9;
+  --warning: #9d5930;
+  --warning-border: #f4d2ba;
+  --incoming-bg: #edf2f9;
+  --outgoing-bg: #e9f5ed;
+  --toolbar-bg: #ffffffe0;
+  --expired-bg: #fffffff2;
+  --scrollbar: #acb8ca;
+  --switch-bg: #d9dfe8;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --app-bg: #11151c;
+    --surface: #1b222d;
+    --header: #171d27;
+    --text: #e6edf7;
+    --secondary: #bfcbdd;
+    --muted: #98a8bf;
+    --border: #354154;
+    --hover: #283448;
+    --accent: #90b1ff;
+    --focus: #90b1ff;
+    --blue-bg: #202e47;
+    --selected-bg: #253958;
+    --viewer-bg: #141a23;
+    --success-bg: #1b302b;
+    --success: #88d5b2;
+    --danger: #ffaaa2;
+    --danger-border: #a65350;
+    --warning-bg: #392a20;
+    --warning: #f3c49f;
+    --warning-border: #73503a;
+    --incoming-bg: #263247;
+    --outgoing-bg: #203a31;
+    --toolbar-bg: #1b222de8;
+    --expired-bg: #1b222df2;
+    --scrollbar: #596a83;
+    --switch-bg: #4a586d;
+  }
+}
+input, progress { accent-color: var(--accent); }
+a { color: var(--accent); }
+textarea { background: var(--surface); color: var(--text); }
+dialog { background: var(--surface); }
+/* QR codes and image pixels keep their source colors in either theme. */
+.qr { background: #ffffff; }

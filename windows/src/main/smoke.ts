@@ -225,5 +225,9 @@ export async function runSmoke(receiver: Receiver, win: BrowserWindow) {
   await waitFor(win, "[...document.querySelectorAll('.message .muted')].every(e => e.textContent.includes('已送达'))");
   await new Promise(resolve => setTimeout(resolve, 500)); await writeFile('test-results/windows-text.png', (await win.webContents.capturePage()).toPNG());
   if (details.nodeExposed) throw new Error('Node exposed in renderer');
+  const themePhoto = await call(receiver, 'PUT', `/photos/${randomUUID()}`, image, photoHeaders(pair.body.credential, image));
+  if (themePhoto.status !== 201) throw new Error('Theme sample photo upload failed');
+  const { runThemeSmoke } = await import('./theme-smoke.js');
+  await runThemeSmoke(win);
   await writeFile('test-results/smoke.json', JSON.stringify({ passed: true, versions: process.versions, details }, null, 2));
 }

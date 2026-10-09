@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { DesktopAPI } from '../shared';
 const api: DesktopAPI = {
+  setPowerEnabled: enabled => ipcRenderer.invoke('set-power-enabled', enabled), cancelPower: () => ipcRenderer.invoke('cancel-power'),
   sendDroppedFiles: files => { const paths = files.map(file => webUtils.getPathForFile(file)); return ipcRenderer.invoke('send-file-paths', paths); }, pasteFiles: () => ipcRenderer.invoke('paste-files'),
   sendFiles: () => ipcRenderer.invoke('send-files'), cancelSendFile: id => ipcRenderer.invoke('cancel-send-file', id),
   openTextLink: url => ipcRenderer.invoke('open-text-link', url),

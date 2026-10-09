@@ -26,7 +26,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLException
 
-data class PhotoState(val messages: List<TextMessage> = emptyList(), val files: List<TransferFile> = emptyList(), val importing: Boolean = false, val ready: Boolean = false, val session: Session? = null, val photos: List<Photo> = emptyList(), val online: Boolean = false, val pairing: Boolean = false, val capturing: Boolean = false, val message: String = "正在加载…")
+data class PhotoState(val power: org.json.JSONObject? = null, val powerBusy: Boolean = false, val powerMessage: String = "", val messages: List<TextMessage> = emptyList(), val files: List<TransferFile> = emptyList(), val importing: Boolean = false, val ready: Boolean = false, val session: Session? = null, val photos: List<Photo> = emptyList(), val online: Boolean = false, val pairing: Boolean = false, val capturing: Boolean = false, val message: String = "正在加载…")
 
 class PhotoViewModel(application: Application) : AndroidViewModel(application) {
     private val store = PhotoStore(application)
@@ -35,6 +35,7 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
     private val files = FileStore(application)
     private val vault = SessionVault(application)
     private val worker = Executors.newSingleThreadScheduledExecutor()
+    private val fileImportBatches = java.util.concurrent.atomic.AtomicInteger()
     private val main = Handler(Looper.getMainLooper())
     private val mutable = MutableStateFlow(PhotoState())
     val state = mutable.asStateFlow()
@@ -63,6 +64,35 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
         worker.scheduleWithFixedDelay({ runCatching { tick() }.onFailure { publish(message = "本地队列错误，请重启后重试") } }, 1, 1, TimeUnit.SECONDS)
     }
     fun foreground(value: Boolean) { foreground = value }
+    fun refreshPower() = powerOperation("status")
+    fun cancelPower() = powerOperation("cancel")
+    fun requestPower(action: String, computerId: String) = powerOperation(action, computerId)
+    private fun powerOperation(action: String, computerId: String = "") {
+        if (mutable.value.powerBusy) return
+        mutable.value = mutable.value.copy(powerBusy = true)
+        worker.execute {
+            try {
+                val current = session ?: throw IllegalStateException("请先连接电脑")
+                val client = api ?: throw IllegalStateException("请先连接电脑")
+                val result = when (action) {
+                    "status" -> client.powerStatus(current)
+                    "cancel" -> client.cancelPower(current)
+                    else -> {
+                        require(current.computerId == computerId) { "配对电脑已变化，请重新确认" }
+                        client.power(current, UUID.randomUUID().toString(), action)
+                    }
+                }
+                mutable.value = mutable.value.copy(power = result, powerMessage = "")
+            } catch (error: Exception) {
+                val note = when {
+                    error is ApiFailure && error.code == "NOT_FOUND" -> "电脑版本不支持电源管理，请更新 Windows 端"
+                    error is ApiFailure -> userMessage(error)
+                    else -> "无法确认电脑电源状态，请刷新查看；操作不会自动重试"
+                }
+                mutable.value = mutable.value.copy(power = null, powerMessage = note)
+            } finally { mutable.value = mutable.value.copy(powerBusy = false) }
+        }
+    }
     private fun publish(message: String = mutable.value.message, online: Boolean = mutable.value.online) { mutable.value = mutable.value.copy(messages = messages.list(), files = downloads.list() + files.list(), session = session, photos = store.list(), message = message, online = online) }
     fun pair(text: String) {
         if (mutable.value.pairing) return
@@ -203,12 +233,20 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
             if (incoming.length() > 0) publish("收到电脑消息", true)
         } catch (error: Exception) { if (error is SSLException || (error is ApiFailure && error.code == "UNAUTHORIZED")) blocked = true }
     }
-    fun importFiles(uris: List<Uri>) {
-        if (uris.isEmpty() || mutable.value.importing) return
+    fun reportShareError(message: String) { worker.execute { publish(message) } }
+    fun sendUnassignedFiles() { worker.execute {
+        val target = session
+        if (target == null) publish("请先连接电脑，再发送已接收的分享文件")
+        else { val count = files.assignUnassigned(target.computerId); publish("已将 $count 个分享文件加入发送队列") }
+    } }
+    fun importFiles(uris: List<Uri>, fromShare: Boolean = false) {
+        if (uris.isEmpty()) return
+        fileImportBatches.incrementAndGet()
         mutable.value = mutable.value.copy(importing = true)
         worker.execute {
+            mutable.value = mutable.value.copy(importing = true)
             try {
-                val target = session ?: throw IllegalStateException("请先连接电脑")
+                val computerId = session?.computerId ?: if (fromShare) "" else throw IllegalStateException("请先连接电脑")
                 val resolver = getApplication<Application>().contentResolver
                 var imported = 0; var failures = 0; var lastError = ""
                 uris.forEach { uri ->
@@ -223,15 +261,18 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
                         }
                         val destination = files.file(id)
                         resolver.openInputStream(uri)?.use { input -> FileOutputStream(destination).use { output -> copyFileWithLimit(input, output, FILE_LIMIT); output.fd.sync() } } ?: throw IOException("无法读取文件")
-                        files.create(id, target.computerId, name.ifBlank { "文件" }, destination.length(), fileHash(destination)); imported++
+                        files.create(id, computerId, name.ifBlank { "文件" }, destination.length(), fileHash(destination)); imported++
                     } catch (error: Exception) { files.file(id).delete(); failures++; lastError = error.message ?: "导入失败" }
-                    publish("已加入 $imported 个文件" + if (failures > 0) "，$failures 个失败：$lastError" else "，等待上传")
+                    publish("已加入 $imported 个文件" + if (failures > 0) "，$failures 个失败：$lastError" else if (computerId.isEmpty()) "，请连接电脑后点击发送分享文件" else "，等待上传")
                 }
             } catch (error: Exception) { publish(userMessage(error)) }
-            finally { mutable.value = mutable.value.copy(importing = false) }
+            finally { mutable.value = mutable.value.copy(importing = fileImportBatches.decrementAndGet() > 0) }
         }
     }
-    fun cancelFile(id: String) { worker.execute { downloads.get(id)?.let { if (it.state !in setOf("received", "canceled")) downloads.update(id, "canceling", it.offset); publish(); return@execute }; files.list().find { it.id == id && it.state !in setOf("sent", "canceled") }?.let { files.update(id, "canceling", it.offset); publish("正在取消文件传输…") } } }
+    fun cancelFile(id: String) { worker.execute { downloads.get(id)?.let { if (it.state !in setOf("received", "canceled")) downloads.update(id, "canceling", it.offset); publish(); return@execute }; files.list().find { it.id == id && it.state !in setOf("sent", "canceled") }?.let {
+        if (it.computerId.isEmpty()) { files.update(id, "canceled", it.offset); files.file(id).delete(); publish("已取消分享文件") }
+        else { files.update(id, "canceling", it.offset); publish("正在取消文件传输…") }
+    } } }
     fun retryFile(id: String) { worker.execute { downloads.get(id)?.let { if (it.state == "failed") downloads.update(id, "receiving", it.offset); blocked = false; lastHeartbeat = 0; publish(); return@execute }; files.list().find { it.id == id && it.state !in setOf("sent", "canceled", "canceling") }?.let { files.update(id, "pending", it.offset); blocked = false; lastHeartbeat = 0; publish("文件等待重试") } } }
     fun cleanFiles() { worker.execute { files.cleanFinished(); downloads.clean(); publish("已清理完成记录，电脑文件和手机原文件不受影响") } }
     fun openReceivedFile(id: String) { worker.execute { val row = downloads.get(id) ?: return@execute; if (row.state != "received" || row.uri.isEmpty()) return@execute; main.post { try { val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).setDataAndType(Uri.parse(row.uri), getApplication<Application>().contentResolver.getType(Uri.parse(row.uri)) ?: "application/octet-stream").addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK); getApplication<Application>().startActivity(intent) } catch (_: Exception) { publish("没有能打开此文件的应用，或文件已被移动；请在下载/MobileVision 中查看") } } } }
@@ -393,6 +434,9 @@ fun retryDelay(attempt: Int): Long = (2000L * (1L shl attempt.coerceIn(0, 5))).c
 fun userMessage(error: Exception): String = when {
     error is SSLException -> "证书校验失败，请确认电脑身份并重新扫码"
     error is ApiFailure -> when (error.code) {
+        "POWER_DISABLED" -> "请先在电脑连接设置中允许手机管理电源"
+        "POWER_BUSY" -> "已有电源操作正在执行，请先查看或取消"
+        "POWER_LIMIT" -> "本次运行的电源请求已达到上限，请重新打开电脑端"
         "UNAUTHORIZED" -> "配对已失效，请在电脑解除配对后重新扫码"
         "ALREADY_PAIRED" -> "电脑已有配对，请先在电脑解除配对"
         "PAIRING_EXPIRED" -> "二维码已过期，请在电脑刷新"

@@ -30,19 +30,19 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --app-bg: #11151c;
-    --surface: #1b222d;
-    --header: #171d27;
-    --text: #e6edf7;
-    --secondary: #bfcbdd;
-    --muted: #98a8bf;
-    --border: #354154;
-    --hover: #283448;
+    --app-bg: #181818;
+    --surface: #222222;
+    --header: #1f2020;
+    --text: #ededed;
+    --secondary: #cecece;
+    --muted: #a0a0a0;
+    --border: #383838;
+    --hover: #2c2c2c;
     --accent: #90b1ff;
     --focus: #90b1ff;
-    --blue-bg: #202e47;
-    --selected-bg: #253958;
-    --viewer-bg: #141a23;
+    --blue-bg: #252525;
+    --selected-bg: #343434;
+    --viewer-bg: #181818;
     --success-bg: #1b302b;
     --success: #88d5b2;
     --danger: #ffaaa2;
@@ -50,12 +50,12 @@
     --warning-bg: #392a20;
     --warning: #f3c49f;
     --warning-border: #73503a;
-    --incoming-bg: #263247;
-    --outgoing-bg: #203a31;
-    --toolbar-bg: #1b222de8;
-    --expired-bg: #1b222df2;
-    --scrollbar: #596a83;
-    --switch-bg: #4a586d;
+    --incoming-bg: #2c2c2c;
+    --outgoing-bg: #363636;
+    --toolbar-bg: #222222e8;
+    --expired-bg: #222222f2;
+    --scrollbar: #666666;
+    --switch-bg: #505050;
   }
 }
 input, progress { accent-color: var(--accent); }

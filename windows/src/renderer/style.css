@@ -246,3 +246,16 @@ footer { height: 22px; min-height: 22px; padding: 3px 16px; align-items: center;
 .interactive-viewer.mouse-focused:focus-visible { outline: none; }
 
 .connection-dialog { background: var(--surface); }
+
+/* Chat messages: shared visual conventions with Android. */
+.text-card { position: relative; }
+.message-date { text-align: center; color: var(--muted); font-size: 12px; margin: 16px 0 12px; }
+.message { width: fit-content; max-width: min(80%, 720px); margin: 10px auto 10px 0; border-radius: 16px; padding: 10px 14px; }
+.message.desktop { margin-left: auto; margin-right: 0; }
+.message:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.message pre { margin: 0; line-height: 1.6; min-width: 0; }
+.message-meta { display: flex; align-items: center; justify-content: flex-end; gap: 7px; color: var(--muted); font-size: 11px; margin-top: 7px; white-space: nowrap; user-select: none; }
+.message-meta svg { display: block; width: 14px; height: 14px; }
+.message-failed { color: var(--danger); }
+.message-copy-notice { position: absolute; bottom: 140px; left: 50%; transform: translateX(-50%); padding: 8px 16px; border-radius: 20px; background: var(--toolbar-bg); color: var(--text); box-shadow: 0 4px 18px #0002; opacity: 0; pointer-events: none; transition: opacity .15s; }
+.message-copy-notice.visible { opacity: 1; }

@@ -14,7 +14,8 @@
     "pack": "npm run build && electron-builder --win dir",
     "test:android": "npm run build && electron . --android-e2e",
     "installer": "npm run build && electron-builder --win nsis",
-    "smoke:tray": "npm run build && electron . --tray-smoke"
+    "smoke:tray": "npm run build && electron . --tray-smoke",
+    "smoke:text": "npm run build && electron . --text-smoke"
   },
   "build": {
     "appId": "com.mobilevision.desktop",

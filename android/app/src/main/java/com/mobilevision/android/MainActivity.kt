@@ -130,8 +130,9 @@ fun MobileVisionScreen(vm: PhotoViewModel, shareRequest: Int = 0) {
     val pending = state.photos.count { it.state == "pending" || it.state == "uploading" }
     val sent = state.photos.count { it.state == "sent" }
     val failed = state.photos.count { it.state == "failed" || it.state == "capture_failed" }
-    Scaffold(modifier = Modifier.fillMaxSize(), bottomBar = {
-        if (!writingFullScreen) Surface(shadowElevation = 6.dp) { Column {
+    val keyboardVisible = WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0
+    Scaffold(modifier = Modifier.fillMaxSize().then(if (textPage) Modifier.imePadding() else Modifier), bottomBar = {
+        if (!writingFullScreen && !(textPage && keyboardVisible)) Surface(shadowElevation = 6.dp) { Column {
             NavigationBar {
                 NavigationBarItem(selected = writing, onClick = { textPage = false; filesPage = false; writing = true; history = false; scan = false }, enabled = !state.capturing, icon = { WritingIcon() }, label = { Text("书写") }, modifier = Modifier.testTag("tab-writing"))
                 NavigationBarItem(selected = !writing && !filesPage && !textPage, onClick = { textPage = false; filesPage = false; history = false; writing = false }, enabled = !state.capturing, icon = { PageIcon(false) }, label = { Text("拍摄") }, modifier = Modifier.testTag("tab-camera"))

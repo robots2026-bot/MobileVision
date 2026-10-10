@@ -14,7 +14,8 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'mv-photo', privileges: { standa
 const smoke = process.argv.includes('--smoke-test');
 const androidE2E = process.argv.includes('--android-e2e');
 const traySmoke = process.argv.includes('--tray-smoke');
-const testing = smoke || androidE2E || traySmoke;
+const textSmoke = process.argv.includes('--text-smoke');
+const testing = smoke || androidE2E || traySmoke || textSmoke;
 if (testing) app.setPath('userData', path.join(process.cwd(), '.smoke-data', String(Date.now())));
 const single = app.requestSingleInstanceLock();
 if (!single) app.quit();
@@ -143,6 +144,7 @@ if (single) app.whenReady().then(async () => {
   handler('reveal-photo', (id: unknown) => { if (typeof id !== 'string') throw new Error('无效照片'); const filename = receiver!.photoPath(id); if (!filename) throw new Error('照片不存在'); shell.showItemInFolder(filename); });
   const mainWindow = await createMainWindow(!testing);
   if (!testing || traySmoke) await createTray();
+  if (textSmoke) { const { runTextSmoke } = await import('./text-smoke.js'); await runTextSmoke(receiver, mainWindow); app.quit(); }
   if (traySmoke) {
     mainWindow.show(); mainWindow.close();
     if (mainWindow.isDestroyed() || mainWindow.isVisible() || !receiver.port) throw new Error('Close to tray failed');

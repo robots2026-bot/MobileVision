@@ -42,13 +42,18 @@ data class InkStroke(val points: List<InkPoint>, val color: Long, val width: Flo
 
 class WritingDocument(private val file: File) {
     val strokes = mutableStateListOf<InkStroke>()
-    val undone = mutableStateListOf<InkStroke>()
+    private val history = WritingHistory(strokes)
+    var canUndo by mutableStateOf(false)
+        private set
+    var canRedo by mutableStateOf(false)
+        private set
     private val saver = Executors.newSingleThreadExecutor()
-    init { runCatching { load(file.readText()) }.getOrElse { emptyList() }.let(strokes::addAll) }
-    fun add(stroke: InkStroke) { if (stroke.points.size > 1) { strokes.add(stroke); undone.clear(); save() } }
-    fun undo() { strokes.removeLastOrNull()?.let { undone.add(it); save() } }
-    fun redo() { undone.removeLastOrNull()?.let { strokes.add(it); save() } }
-    fun clear() { strokes.clear(); undone.clear(); save() }
+    init { runCatching { load(file.readText()) }.getOrElse { emptyList() }.let(strokes::addAll); history.restoreUndoForLoadedItems(); canUndo = history.canUndo }
+    fun add(stroke: InkStroke) { if (stroke.points.size > 1) { history.add(stroke); updateHistory() } }
+    fun undo() { if (history.canUndo) { history.undo(); updateHistory() } }
+    fun redo() { if (history.canRedo) { history.redo(); updateHistory() } }
+    fun clear() { if (strokes.isNotEmpty()) { history.clear(); updateHistory() } }
+    private fun updateHistory() { canUndo = history.canUndo; canRedo = history.canRedo; save() }
     private fun save() {
         val text = JSONArray(strokes.map { stroke -> JSONObject().put("color", stroke.color).put("width", stroke.width.toDouble()).put("eraser", stroke.eraser).put("points", JSONArray(stroke.points.map { JSONArray().put(it.x.toDouble()).put(it.y.toDouble()) })) }).toString()
         saver.execute { runCatching { val temporary = File(file.path + ".part"); temporary.writeText(text); if (file.exists()) file.delete(); temporary.renameTo(file) } }
@@ -89,16 +94,16 @@ fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, f
         }
         val floatingColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
         if (fullScreen) {
-            Surface(Modifier.align(Alignment.CenterEnd).padding(end = 8.dp), shape = MaterialTheme.shapes.large, color = floatingColor, shadowElevation = 5.dp) {
-                Column(Modifier.padding(vertical = 4.dp)) {
+            Surface(Modifier.align(Alignment.CenterEnd).padding(end = 8.dp), shape = CircleShape, color = floatingColor, shadowElevation = 5.dp) {
+                Column {
                     WritingToolButton("画笔", ToolIcon.Pen, selected = !eraser, onClick = { eraser = false })
                     WritingToolButton("橡皮", ToolIcon.Eraser, selected = eraser, onClick = { eraser = true })
-                    WritingToolButton("撤销", ToolIcon.Undo, enabled = document.strokes.isNotEmpty(), modifier = Modifier.testTag("writing-undo"), onClick = document::undo)
-                    WritingToolButton("重做", ToolIcon.Redo, enabled = document.undone.isNotEmpty(), onClick = document::redo)
+                    WritingToolButton("撤销", ToolIcon.Undo, enabled = document.canUndo, modifier = Modifier.testTag("writing-undo"), onClick = document::undo)
+                    WritingToolButton("重做", ToolIcon.Redo, enabled = document.canRedo, onClick = document::redo)
                 }
             }
-            Surface(Modifier.align(Alignment.TopEnd).padding(8.dp), shape = MaterialTheme.shapes.large, color = floatingColor, shadowElevation = 5.dp) {
-                Row(Modifier.padding(horizontal = 4.dp)) {
+            Surface(Modifier.align(Alignment.TopEnd).padding(8.dp), shape = CircleShape, color = floatingColor, shadowElevation = 5.dp) {
+                Row {
                     WritingToolButton("颜色", ToolIcon.Color, tint = Color(color), onClick = { chooseColor = true })
                     WritingToolButton("粗细 ${widthLevel.toInt()} 级", ToolIcon.Width, lineWidth = widthLevel, onClick = { chooseWidth = true })
                     WritingToolButton("清屏", ToolIcon.Clear, enabled = document.strokes.isNotEmpty(), onClick = document::clear)
@@ -108,14 +113,14 @@ fun WritingPanel(document: WritingDocument, busy: Boolean, connected: Boolean, f
                 }
             }
         } else {
-            Surface(Modifier.align(Alignment.TopCenter).padding(top = 8.dp), shape = MaterialTheme.shapes.large, color = floatingColor, shadowElevation = 5.dp) {
-                Row(Modifier.padding(horizontal = 4.dp)) {
+            Surface(Modifier.align(Alignment.TopCenter).padding(top = 8.dp), shape = CircleShape, color = floatingColor, shadowElevation = 5.dp) {
+                Row {
                     WritingToolButton("画笔", ToolIcon.Pen, size = 38.dp, selected = !eraser, onClick = { eraser = false })
                     WritingToolButton("橡皮", ToolIcon.Eraser, size = 38.dp, selected = eraser, onClick = { eraser = true })
                     WritingToolButton("颜色", ToolIcon.Color, size = 38.dp, tint = Color(color), onClick = { chooseColor = true })
                     WritingToolButton("粗细 ${widthLevel.toInt()} 级", ToolIcon.Width, size = 38.dp, lineWidth = widthLevel, onClick = { chooseWidth = true })
-                    WritingToolButton("撤销", ToolIcon.Undo, size = 38.dp, enabled = document.strokes.isNotEmpty(), modifier = Modifier.testTag("writing-undo"), onClick = document::undo)
-                    WritingToolButton("重做", ToolIcon.Redo, size = 38.dp, enabled = document.undone.isNotEmpty(), onClick = document::redo)
+                    WritingToolButton("撤销", ToolIcon.Undo, size = 38.dp, enabled = document.canUndo, modifier = Modifier.testTag("writing-undo"), onClick = document::undo)
+                    WritingToolButton("重做", ToolIcon.Redo, size = 38.dp, enabled = document.canRedo, onClick = document::redo)
                     WritingToolButton("清屏", ToolIcon.Clear, size = 38.dp, enabled = document.strokes.isNotEmpty(), onClick = document::clear)
                     WritingToolButton(if (busy) "正在同步" else "同步到电脑", ToolIcon.Sync, size = 38.dp, enabled = connected && !busy && document.strokes.isNotEmpty() && canvasSize.width > 0, modifier = Modifier.testTag("writing-sync"), busy = busy, onClick = { onSync(renderWriting(document.strokes.toList(), canvasSize), false) })
                 }
@@ -175,7 +180,11 @@ private fun WritingToolButton(description: String, icon: ToolIcon, modifier: Mod
     val decorated = modifier.size(size).semantics { contentDescription = description }
     val resolvedTint = tint ?: LocalContentColor.current
     val content: @Composable () -> Unit = { if (busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) else WritingToolIcon(icon, resolvedTint, lineWidth) }
-    if (selected) FilledTonalIconButton(onClick = onClick, modifier = decorated, enabled = enabled, content = content) else IconButton(onClick = onClick, modifier = decorated, enabled = enabled, content = content)
+    if (selected) {
+        Surface(onClick = onClick, modifier = decorated.padding(3.dp), enabled = enabled, shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
+        }
+    } else IconButton(onClick = onClick, modifier = decorated, enabled = enabled, content = content)
 }
 
 @Composable
@@ -190,10 +199,44 @@ private fun WritingToolIcon(icon: ToolIcon, tint: Color, lineWidth: Float) {
             ToolIcon.Eraser -> { val path = Path().apply { moveTo(5f * unit, 17f * unit); lineTo(15f * unit, 7f * unit); lineTo(22f * unit, 14f * unit); lineTo(12f * unit, 24f * unit); close() }; drawPath(path, foreground, style = stroke); drawLine(foreground, point(9f, 13f), point(16f, 20f), 2f * unit) }
             ToolIcon.Color -> drawCircle(foreground, 7f * unit, center)
             ToolIcon.Width -> drawLine(foreground, point(3f, 13f), point(23f, 13f), lineWidth.coerceIn(1f, 32f) * 0.28f * unit, StrokeCap.Round)
-            ToolIcon.Undo, ToolIcon.Redo -> { val undo = icon == ToolIcon.Undo; val x: (Float) -> Float = { value -> if (undo) value else 26f - value }; val path = Path().apply { moveTo(x(22f) * unit, 19f * unit); lineTo(x(15f) * unit, 19f * unit); cubicTo(x(10f) * unit, 19f * unit, x(7f) * unit, 16f * unit, x(7f) * unit, 11f * unit); lineTo(x(7f) * unit, 8f * unit) }; drawPath(path, foreground, style = stroke); drawLine(foreground, point(x(7f), 8f), point(x(3f), 12f), 2f * unit); drawLine(foreground, point(x(7f), 8f), point(x(11f), 12f), 2f * unit) }
-            ToolIcon.Clear -> { drawRoundRect(foreground, point(3f, 5f), androidx.compose.ui.geometry.Size(20f * unit, 16f * unit), androidx.compose.ui.geometry.CornerRadius(2f * unit), style = stroke); drawLine(foreground, point(8f, 17f), point(18f, 9f), 3f * unit, StrokeCap.Round); drawLine(foreground, point(7f, 23f), point(19f, 23f), 2f * unit, StrokeCap.Round) }
+            ToolIcon.Undo, ToolIcon.Redo -> {
+                fun x(value: Float) = (if (icon == ToolIcon.Undo) value else 26f - value) * unit
+                val path = Path().apply {
+                    moveTo(x(19f), 22f * unit)
+                    cubicTo(x(19f), 13f * unit, x(15f), 8f * unit, x(5f), 6f * unit)
+                    moveTo(x(10f), 3f * unit)
+                    lineTo(x(5f), 6f * unit)
+                    lineTo(x(8f), 11f * unit)
+                }
+                drawPath(path, foreground, style = stroke)
+            }
+            ToolIcon.Clear -> {
+                drawLine(foreground, point(20f, 3f), point(12f, 13f), 2f * unit, StrokeCap.Round)
+                val broom = Path().apply { moveTo(10f * unit, 11f * unit); lineTo(16f * unit, 16f * unit); lineTo(12f * unit, 22f * unit); lineTo(3f * unit, 17f * unit); close() }
+                drawPath(broom, foreground, style = stroke)
+                drawLine(foreground, point(10f, 15f), point(7f, 19f), 1.5f * unit, StrokeCap.Round)
+                drawLine(foreground, point(13f, 17f), point(10f, 21f), 1.5f * unit, StrokeCap.Round)
+                drawLine(foreground, point(16f, 23f), point(23f, 23f), 2f * unit, StrokeCap.Round)
+            }
             ToolIcon.Sync -> { drawRoundRect(foreground, point(3f, 5f), androidx.compose.ui.geometry.Size(20f * unit, 15f * unit), androidx.compose.ui.geometry.CornerRadius(2f * unit), style = stroke); drawLine(foreground, point(13f, 16f), point(13f, 8f), 2f * unit); drawLine(foreground, point(9f, 12f), point(13f, 8f), 2f * unit); drawLine(foreground, point(17f, 12f), point(13f, 8f), 2f * unit); drawLine(foreground, point(9f, 23f), point(17f, 23f), 2f * unit) }
-            ToolIcon.Paste -> { drawRoundRect(foreground, point(5f, 6f), androidx.compose.ui.geometry.Size(16f * unit, 17f * unit), androidx.compose.ui.geometry.CornerRadius(2f * unit), style = stroke); drawLine(foreground, point(9f, 3f), point(17f, 3f), 2f * unit); drawLine(foreground, point(13f, 10f), point(13f, 18f), 2f * unit); drawLine(foreground, point(9f, 14f), point(13f, 18f), 2f * unit); drawLine(foreground, point(17f, 14f), point(13f, 18f), 2f * unit) }
+            ToolIcon.Paste -> {
+                val board = Path().apply {
+                    moveTo(8f * unit, 5f * unit)
+                    lineTo(5f * unit, 5f * unit)
+                    quadraticTo(3f * unit, 5f * unit, 3f * unit, 7f * unit)
+                    lineTo(3f * unit, 21f * unit)
+                    quadraticTo(3f * unit, 23f * unit, 5f * unit, 23f * unit)
+                    lineTo(19f * unit, 23f * unit)
+                    quadraticTo(21f * unit, 23f * unit, 21f * unit, 21f * unit)
+                    lineTo(21f * unit, 7f * unit)
+                    quadraticTo(21f * unit, 5f * unit, 19f * unit, 5f * unit)
+                    lineTo(16f * unit, 5f * unit)
+                }
+                drawPath(board, foreground, style = stroke)
+                drawRoundRect(foreground, point(8f, 3f), androidx.compose.ui.geometry.Size(8f * unit, 5f * unit), androidx.compose.ui.geometry.CornerRadius(1.5f * unit), style = stroke)
+                drawLine(foreground, point(8f, 13f), point(16f, 13f), 2f * unit, StrokeCap.Round)
+                drawLine(foreground, point(8f, 17f), point(14f, 17f), 2f * unit, StrokeCap.Round)
+            }
             ToolIcon.Landscape -> { drawRoundRect(foreground, point(2f, 6f), androidx.compose.ui.geometry.Size(22f * unit, 14f * unit), androidx.compose.ui.geometry.CornerRadius(2.5f * unit), style = stroke); drawCircle(foreground, 1.2f * unit, point(21f, 13f)) }
             ToolIcon.Portrait -> { drawRoundRect(foreground, point(6f, 2f), androidx.compose.ui.geometry.Size(14f * unit, 22f * unit), androidx.compose.ui.geometry.CornerRadius(2.5f * unit), style = stroke); drawCircle(foreground, 1.2f * unit, point(13f, 21f)) }
         }

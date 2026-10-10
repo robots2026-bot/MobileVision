@@ -1,5 +1,5 @@
 import { validateFilePaths, clipboardFilePaths } from './file-input';
-import { app, BrowserWindow, dialog, ipcMain, protocol, net, shell, clipboard, ClipboardItem, nativeTheme } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, protocol, net, shell, clipboard, ClipboardItem, nativeTheme, Tray, Menu, nativeImage } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -13,11 +13,13 @@ import type { DesktopState } from '../shared';
 protocol.registerSchemesAsPrivileged([{ scheme: 'mv-photo', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 const smoke = process.argv.includes('--smoke-test');
 const androidE2E = process.argv.includes('--android-e2e');
-const testing = smoke || androidE2E;
+const traySmoke = process.argv.includes('--tray-smoke');
+const testing = smoke || androidE2E || traySmoke;
 if (testing) app.setPath('userData', path.join(process.cwd(), '.smoke-data', String(Date.now())));
 const single = app.requestSingleInstanceLock();
 if (!single) app.quit();
 let win: BrowserWindow | undefined; let receiver: Receiver | undefined; let closing = false; let exitCode = 0; let selectedAddress = '';
+let tray: Tray | undefined; let trayMenu: Menu | undefined; let quitting = false;
 const uiPath = path.join(__dirname, '../renderer/index.html');
 
 function windowThemeColors() { return nativeTheme.shouldUseDarkColors ? { color: '#171d27', symbolColor: '#bfcbdd', background: '#11151c' } : { color: '#fbfcfe', symbolColor: '#536178', background: '#f4f6f9' }; }
@@ -54,8 +56,19 @@ async function createMainWindow(show = true) {
   if (win && !win.isDestroyed()) { if (win.isMinimized()) win.restore(); if (show) { win.show(); win.focus(); } return win; }
   const colors = windowThemeColors();
   win = new BrowserWindow({ width: 1260, height: 850, minWidth: 1000, minHeight: 700, show, titleBarStyle: 'hidden', titleBarOverlay: { color: colors.color, symbolColor: colors.symbolColor, height: 44 }, backgroundColor: colors.background, title: 'MobileVision · 手机图片助手', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  win.on('close', event => { if (!quitting && tray && !tray.isDestroyed()) { event.preventDefault(); win!.hide(); } });
+  win.on('query-session-end', () => { quitting = true; });
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' })); win.webContents.on('will-navigate', event => event.preventDefault()); win.on('closed', () => { win = undefined; });
   await win.loadFile(uiPath); return win;
+}
+async function createTray() {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#2563eb"/><rect x="6" y="6" width="20" height="15" rx="2" fill="none" stroke="white" stroke-width="2"/><path d="M16 21v5M11 26h10M10 17l4-5 3 3 3-4 3 6" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  tray = new Tray(nativeImage.createFromBuffer(await sharp(Buffer.from(svg)).png().toBuffer()));
+  tray.setToolTip('MobileVision · 手机图片助手');
+  const showWindow = () => { void createMainWindow(true); };
+  trayMenu = Menu.buildFromTemplate([{ id: 'show', label: '显示主窗口', click: showWindow }, { type: 'separator' }, { id: 'quit', label: '退出', click: () => app.quit() }]);
+  tray.setContextMenu(trayMenu);
+  tray.on('click', showWindow); tray.on('double-click', showWindow);
 }
 async function pastePng(bytes: Buffer) {
   await clipboard.write([new ClipboardItem({ 'image/png': new Blob([new Uint8Array(bytes)], { type: 'image/png' }) })]);
@@ -129,6 +142,19 @@ if (single) app.whenReady().then(async () => {
   handler('open-directory', async () => { const error = await shell.openPath(receiver!.directory); if (error) throw new Error(error); });
   handler('reveal-photo', (id: unknown) => { if (typeof id !== 'string') throw new Error('无效照片'); const filename = receiver!.photoPath(id); if (!filename) throw new Error('照片不存在'); shell.showItemInFolder(filename); });
   const mainWindow = await createMainWindow(!testing);
+  if (!testing || traySmoke) await createTray();
+  if (traySmoke) {
+    mainWindow.show(); mainWindow.close();
+    if (mainWindow.isDestroyed() || mainWindow.isVisible() || !receiver.port) throw new Error('Close to tray failed');
+    await createMainWindow(true);
+    if (!mainWindow.isVisible() || BrowserWindow.getAllWindows().length !== 1) throw new Error('Restore from tray failed');
+    mainWindow.minimize(); await createMainWindow(true);
+    if (mainWindow.isMinimized() || !mainWindow.isVisible()) throw new Error('Restore minimized window failed');
+    if (!tray || tray.isDestroyed() || !trayMenu?.getMenuItemById('quit')) throw new Error('Tray menu missing');
+    await mkdir('test-results', { recursive: true });
+    await writeFile('test-results/tray-smoke.json', JSON.stringify({ closeHidesWindow: true, receiverStillRunning: receiver.port > 0, restoreReusesWindow: true, restoreMinimizedWindow: true, trayCreated: true, quitMenuPresent: true }, null, 2));
+    trayMenu.getMenuItemById('quit')!.click(undefined as any, mainWindow, {} as any);
+  }
   if (androidE2E) {
     const { runAndroidE2E } = await import('./android-e2e.js');
     await runAndroidE2E(receiver, mainWindow);
@@ -146,4 +172,6 @@ if (single) app.whenReady().then(async () => {
 });
 app.on('second-instance', () => { void createMainWindow(true); });
 app.on('window-all-closed', () => app.quit());
-app.on('before-quit', event => { if (receiver && !closing) { event.preventDefault(); closing = true; void receiver.close().finally(() => app.exit(exitCode)); } });
+app.on('before-quit', event => { quitting = true; if (receiver && !closing) { event.preventDefault(); closing = true; tray?.destroy(); void receiver.close().finally(() => app.exit(exitCode)); } });
+
+app.on('will-quit', () => { tray?.destroy(); });

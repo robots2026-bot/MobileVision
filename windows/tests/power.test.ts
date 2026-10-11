@@ -10,10 +10,10 @@ import { PowerControl, powerCommand } from '../src/main/power';
 import { Receiver } from '../src/main/receiver';
 import { call } from '../src/main/smoke';
 
-test('screen off native wrapper compiles in Windows PowerShell 5.1 without invoking power', { skip: process.platform !== 'win32' }, async () => {
+test('display native wrapper compiles with correct INPUT layout without invoking power', { skip: process.platform !== 'win32' }, async () => {
   const [file, args] = powerCommand('screenOff');
   const script = args.at(-1)!;
-  const compileOnly = script.slice(0, script.indexOf('; if (-not')) + "; if ($null -eq [MobileVisionDisplay].GetMethod('TurnOff')) { exit 1 }";
+  const compileOnly = script.slice(0, script.indexOf('; if (-not')) + "; if ($null -eq [MobileVisionDisplay].GetMethod('TurnOff') -or $null -eq [MobileVisionDisplay].GetMethod('TurnOn')) { exit 1 }; $size = [Runtime.InteropServices.Marshal]::SizeOf([type][MobileVisionDisplay+Input]); if ($size -ne $(if ([IntPtr]::Size -eq 8) { 40 } else { 28 })) { throw ('Invalid INPUT layout: ' + $size) }; $offset = [Runtime.InteropServices.Marshal]::OffsetOf([type][MobileVisionDisplay+Input], 'mouse').ToInt32(); if ($offset -ne [IntPtr]::Size) { throw ('Invalid mouse offset: ' + $offset) }";
   await promisify(execFile)(file, [...args.slice(0, -1), compileOnly], { windowsHide: true, timeout: 30_000 });
 });
 
@@ -63,7 +63,7 @@ test('display toggle updates only after successful immediate commands and surviv
     assert.ok(on.executeAt - before < 100);
     await new Promise(resolve => setTimeout(resolve, 40));
     assert.equal(control.status().displayOff, false); assert.deepEqual(calls, ['screenOff', 'screenOn']);
-    assert.match(powerCommand('screenOn')[1].at(-1)!, /new IntPtr\(-1\)/);
+    assert.match(powerCommand('screenOn')[1].at(-1)!, /SendInput\(1, new Input\[\] \{ input \}, Marshal.SizeOf\(typeof\(Input\)\)\) == 1/);
   } finally { control.dispose(); }
   const failed = new PowerControl(() => {}, async () => { throw new Error('Display command denied'); });
   try { failed.schedule(randomUUID(), 'screenOff'); await new Promise(resolve => setTimeout(resolve, 40)); assert.equal(failed.status().displayOff, false); } finally { failed.dispose(); }

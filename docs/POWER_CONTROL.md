@@ -16,7 +16,7 @@
 全部接口必须携带现有配对凭据，使用配对证书指纹验证的 HTTPS。
 
 - `GET /api/v1/power`：返回 `enabled`、`displayOff` 和最近一次 `job`。`displayOff` 记录最近成功提交的远程屏幕操作，关闭再打开手机电源面板后仍可继续点亮；它不检测鼠标、键盘或显示器自身开关造成的物理状态变化。
-- `POST /api/v1/power`：JSON 包含 UUID `id`、当前 `computerId`、`action`（`screenOff`、`screenOn`、`shutdown`、`hibernate`、`sleep`、`restart`）。`screenOff` 和 `screenOn` 均不等待倒计时，使用 Windows `SC_MONITORPOWER` 消息关闭或点亮显示器。返回 202 表示电脑已接受请求，不能据此认定电脑完成电源切换。
+- `POST /api/v1/power`：JSON 包含 UUID `id`、当前 `computerId`、`action`（`screenOff`、`screenOn`、`shutdown`、`hibernate`、`sleep`、`restart`）。`screenOff` 和 `screenOn` 均不等待倒计时；息屏使用 Windows `SC_MONITORPOWER` 消息，点亮使用 `SendInput` 注入零位移鼠标移动事件，不点击或移动指针。输入注入失败时任务标记失败，保留此前显示状态。返回 202 表示电脑已接受请求，不能据此认定电脑完成电源切换。
 - `DELETE /api/v1/power`：取消尚未执行的请求并返回最新状态，已执行的操作不能撤销。
 
 状态为 `pending`、`executing`、`submitted`、`canceled` 或 `failed`。相同 UUID 不会重复执行，不同操作复用 UUID 会被拒绝；每次运行最多接收 100 个不同电源请求。重启程序不恢复旧请求。

@@ -9,7 +9,19 @@ export class PowerError extends Error { constructor(public status: number, publi
 export function powerCommand(action: PowerAction): [string, string[]] {
   const system = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32');
   if (action === 'shutdown' || action === 'restart') return [path.join(system, 'shutdown.exe'), [action === 'shutdown' ? '/s' : '/r', '/t', '0']];
-  if (action === 'screenOff' || action === 'screenOn') return [path.join(system, 'WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-NonInteractive', '-Command', `$ErrorActionPreference = 'Stop'; Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class MobileVisionDisplay { [DllImport("user32.dll", EntryPoint = "SendNotifyMessageW", ExactSpelling = true, SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool SendNotifyMessage(IntPtr hWnd, uint msg, UIntPtr wParam, IntPtr lParam); public static bool ${action === 'screenOff' ? 'TurnOff' : 'TurnOn'}() { return SendNotifyMessage(new IntPtr(65535), 0x0112, new UIntPtr(0xF170u), new IntPtr(${action === 'screenOff' ? 2 : -1})); } }'; if (-not [MobileVisionDisplay]::${action === 'screenOff' ? 'TurnOff' : 'TurnOn'}()) { throw ('SendNotifyMessageW failed: ' + [Runtime.InteropServices.Marshal]::GetLastWin32Error()) }`]];
+  if (action === 'screenOff' || action === 'screenOn') {
+    const native = `using System; using System.Runtime.InteropServices; public static class MobileVisionDisplay {
+      [StructLayout(LayoutKind.Sequential)] public struct MouseInput { public int dx, dy; public uint mouseData, flags, time; public UIntPtr extraInfo; }
+      [StructLayout(LayoutKind.Sequential)] public struct Input { public uint type; public MouseInput mouse; }
+      [DllImport("user32.dll", EntryPoint = "SendNotifyMessageW", ExactSpelling = true, SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool SendNotifyMessage(IntPtr hWnd, uint msg, UIntPtr wParam, IntPtr lParam);
+      [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint count, Input[] inputs, int size);
+      public static bool TurnOff() { return SendNotifyMessage(new IntPtr(65535), 0x0112, new UIntPtr(0xF170u), new IntPtr(2)); }
+      public static bool TurnOn() { var input = new Input(); input.mouse.flags = 0x0001; return SendInput(1, new Input[] { input }, Marshal.SizeOf(typeof(Input))) == 1; }
+    }`;
+    const method = action === 'screenOff' ? 'TurnOff' : 'TurnOn';
+    // A zero-distance mouse move wakes an idle display without clicking or moving the pointer.
+    return [path.join(system, 'WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-NonInteractive', '-Command', `$ErrorActionPreference = 'Stop'; Add-Type -TypeDefinition '${native}'; if (-not [MobileVisionDisplay]::${method}()) { throw ('${action === 'screenOff' ? 'SendNotifyMessageW' : 'SendInput'} failed: ' + [Runtime.InteropServices.Marshal]::GetLastWin32Error()) }`]];
+  }
   const state = action === 'sleep' ? 'Suspend' : 'Hibernate';
   return [path.join(system, 'WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-NonInteractive', '-Command', `Add-Type -AssemblyName System.Windows.Forms; if (-not [System.Windows.Forms.Application]::SetSuspendState([System.Windows.Forms.PowerState]::${state}, $false, $false)) { exit 1 }`]];
 }

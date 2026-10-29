@@ -43,6 +43,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.ViewModelProvider
 import com.mobilevision.android.camera.CameraPanel
+import com.mobilevision.android.camera.DeviceOrientation
 import com.mobilevision.android.network.Pairing
 import com.mobilevision.android.ui.theme.MobileVisionTheme
 import com.mobilevision.android.writing.WritingDocument
@@ -90,6 +91,8 @@ fun MobileVisionScreen(vm: PhotoViewModel, shareRequest: Int = 0) {
     var scan by remember { mutableStateOf(false) }; var front by remember { mutableStateOf(false) }
     var previewRatio by remember { mutableFloatStateOf(3f / 4f) }
     var capture by remember { mutableStateOf<ImageCapture?>(null) }
+    var gravityRotation by remember { mutableIntStateOf(Surface.ROTATION_0) }
+    val orientationListener = remember(context) { DeviceOrientation(context, { (context as? Activity)?.window?.decorView?.display?.rotation ?: Surface.ROTATION_0 }, { gravityRotation = it }) }
     var cameraError by remember { mutableStateOf("") }
     var paste by remember { mutableStateOf(false) }; var pairText by remember { mutableStateOf("") }
     var selectedPhoto by remember { mutableStateOf<String?>(null) }
@@ -113,6 +116,10 @@ fun MobileVisionScreen(vm: PhotoViewModel, shareRequest: Int = 0) {
             controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         } else controller?.show(WindowInsetsCompat.Type.systemBars())
         onDispose { }
+    }
+    DisposableEffect(lifecycle, !writing && !filesPage && !textPage && !scan && !history) {
+        if (!writing && !filesPage && !textPage && !scan && !history) lifecycle.lifecycle.addObserver(orientationListener)
+        onDispose { lifecycle.lifecycle.removeObserver(orientationListener); orientationListener.onPause(lifecycle) }
     }
     DisposableEffect(lifecycle) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
@@ -183,7 +190,7 @@ fun MobileVisionScreen(vm: PhotoViewModel, shareRequest: Int = 0) {
                     Surface(modifier = Modifier.size(80.dp).testTag("capture").semantics { contentDescription = "拍照" }, shape = androidx.compose.foundation.shape.CircleShape, color = MaterialTheme.colorScheme.primary, enabled = permission && capture != null && !state.capturing && !state.pairing, onClick = {
                         val camera = capture
                         if (camera != null) vm.beginCapture { id, file ->
-                            camera.targetRotation = (context as? ComponentActivity)?.window?.decorView?.display?.rotation ?: Surface.ROTATION_0
+                            camera.targetRotation = gravityRotation
                             try {
                                 camera.takePicture(ImageCapture.OutputFileOptions.Builder(file).build(), ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageSavedCallback {
                                     override fun onImageSaved(output: ImageCapture.OutputFileResults) { vm.captureFinished(id) }

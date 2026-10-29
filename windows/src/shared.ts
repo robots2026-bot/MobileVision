@@ -1,6 +1,6 @@
 export interface TextMessage { id: string; text: string; source: string; state: string; createdAt: string; }
 export interface ReceivedFile { direction?: string; id: string; name: string; bytes: number; offset: number; state: string; createdAt: string; receivedAt: string; }
-export interface Photo { id: string; photoId: string; deviceName: string; receivedAt: string; capturedAt: string; bytes: number; width: number; height: number; filename: string; }
+export interface Photo { id: string; photoId: string; deviceName: string; receivedAt: string; capturedAt: string; bytes: number; width: number; height: number; filename: string; revision: number; }
 export interface DesktopState {
   power: { enabled: boolean; displayOff: boolean; job: { action: string; executeAt: number; state: string } | null };
   directory: string; addresses: string[]; selectedAddress: string; port: number; running: boolean;
@@ -18,6 +18,7 @@ export interface DesktopAPI {
   saveCrop(id: string, region: CropRegion): Promise<string | null>;
   copyCrop(id: string, region: CropRegion): Promise<void>;
   deletePhotos(ids: string[]): Promise<boolean>;
+  rotatePhoto(id: string, direction: 'left' | 'right'): Promise<void>;
   copyPairing(): Promise<void>; exportDiagnostics(): Promise<void>;
   state(): Promise<DesktopState>; chooseDirectory(): Promise<void>; refreshPairing(): Promise<void>;
   selectAddress(address: string): Promise<void>; revoke(): Promise<void>; openDirectory(): Promise<void>;

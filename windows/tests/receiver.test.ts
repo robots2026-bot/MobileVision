@@ -66,7 +66,7 @@ test('restart recovers verified pending files and rejects corrupt or incomplete 
       const id = randomUUID(); const filepath = path.join(root, 'photos', id + '.jpg'); const temporary = filepath + '.part';
       const content = kind === 'corrupt' ? Buffer.from('corrupt JPEG') : image;
       await writeFile(kind === 'renamed' ? filepath : temporary, kind === 'incomplete' ? content.subarray(0, 10) : content);
-      db.prepare('INSERT INTO photos VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id, randomUUID(), randomUUID(), 'recovery', new Date().toISOString(), new Date().toISOString(), content.length, createHash('sha256').update(content).digest('hex'), 0, 0, id + '.jpg', filepath, temporary, 'pending');
+      db.prepare('INSERT INTO photos VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id, randomUUID(), randomUUID(), 'recovery', new Date().toISOString(), new Date().toISOString(), content.length, createHash('sha256').update(content).digest('hex'), 0, 0, id + '.jpg', filepath, temporary, 'pending', content.length, createHash('sha256').update(content).digest('hex'), 0);
       pending.push({ kind, id, temporary });
     }
     db.close();
@@ -118,5 +118,46 @@ test('bulk deletion removes originals and thumbnails, preserves unselected photo
     const db = new DatabaseSync(path.join(root, 'state', 'receiver.sqlite')); db.prepare("UPDATE photos SET status='deleting' WHERE id=?").run(ids[2]); db.close();
     receiver = new Receiver(path.join(root, 'state'), path.join(root, 'photos'), '127.0.0.1'); await receiver.initialize();
     assert.equal(receiver.photos().length, 0); await assert.rejects(stat(files[2])); await assert.rejects(stat(path.join(root, 'state', 'thumbnails', ids[2] + '.jpg')));
+  } finally { await receiver.close(); assert.ok(path.resolve(root).startsWith(path.resolve(os.tmpdir()) + path.sep)); await rm(root, { recursive: true, force: true }); }
+});
+
+
+test('rotate rewrites the original in place and preserves phone deduplication', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'mobilevision-rotate-'));
+  const receiver = new Receiver(path.join(root, 'state'), path.join(root, 'photos'), '127.0.0.1');
+  try {
+    await receiver.initialize();
+    const pair = await call(receiver, 'POST', '/pair', Buffer.from(JSON.stringify({ token: receiver.pairing('127.0.0.1').token, deviceId: randomUUID(), deviceName: 'rotate-test' })));
+    assert.equal(pair.status, 201);
+    const credential = pair.body.credential;
+    const image = await samplePhoto(); const headers = photoHeaders(credential, image); const photoId = randomUUID();
+    const upload = await call(receiver, 'PUT', `/photos/${photoId}`, image, headers);
+    assert.equal(upload.status, 201, JSON.stringify(upload));
+    const id = upload.body.id;
+    const before = receiver.photos()[0];
+    assert.equal(before.revision, 0); assert.equal(before.width, 1200); assert.equal(before.height, 800);
+    assert.deepEqual(await readFile(receiver.photoPath(id)!), image);
+
+    await assert.rejects(receiver.rotatePhoto('not-a-uuid', 'left'), /无效的照片/);
+    await assert.rejects(receiver.rotatePhoto(id, 'up'), /无效的旋转方向/);
+    await assert.rejects(receiver.rotatePhoto(randomUUID(), 'left'), /照片不存在/);
+    assert.equal(receiver.photos()[0].revision, 0);
+
+    await receiver.rotatePhoto(id, 'right');
+    const after = receiver.photos()[0];
+    assert.equal(after.revision, 1); assert.equal(after.width, 800); assert.equal(after.height, 1200);
+    const rotated = await readFile(receiver.photoPath(id)!);
+    assert.notDeepEqual(rotated, image);
+    const meta = await (await import('sharp')).default(rotated).metadata();
+    assert.equal(meta.width, 800); assert.equal(meta.height, 1200); assert.ok(!meta.orientation || meta.orientation === 1);
+    const thumb = await receiver.thumbnail(id); assert.ok(thumb);
+
+    // The phone retries the same original bytes: recognized as a duplicate, not a conflict.
+    const duplicate = await call(receiver, 'PUT', `/photos/${photoId}`, image, headers);
+    assert.equal(duplicate.status, 200); assert.equal(duplicate.body.id, id); assert.equal(receiver.photos().length, 1);
+
+    await receiver.rotatePhoto(id, 'left');
+    assert.equal(receiver.photos()[0].revision, 2);
+    assert.equal(receiver.photos()[0].width, 1200); assert.equal(receiver.photos()[0].height, 800);
   } finally { await receiver.close(); assert.ok(path.resolve(root).startsWith(path.resolve(os.tmpdir()) + path.sep)); await rm(root, { recursive: true, force: true }); }
 });

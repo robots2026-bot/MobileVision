@@ -116,6 +116,10 @@ if (single) app.whenReady().then(async () => {
     if (path.resolve(result.filePath).toLowerCase() === path.resolve(filename).toLowerCase()) throw new Error('截图不能覆盖原照片');
     await writeFile(result.filePath, bytes); return result.filePath;
   });
+  handler('rotate-photo', async (id: unknown, direction: unknown) => {
+    if (typeof id !== 'string' || (direction !== 'left' && direction !== 'right')) throw new Error('无效的旋转操作');
+    await receiver!.rotatePhoto(id, direction);
+  });
   handler('delete-photos', async (ids: unknown) => {
     if (!Array.isArray(ids) || !ids.length || ids.length > 500 || ids.some(id => typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id))) throw new Error('无效的照片选择');
     const unique = [...new Set<string>(ids)];

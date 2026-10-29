@@ -24,7 +24,7 @@ const digest = (value: string | Buffer) => createHash('sha256').update(value).di
 const equal = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 class ApiError extends Error { constructor(public status: number, public code: string) { super(code); } }
 interface Device { id: string; name: string; tokenHash: string; lastSeen: number; }
-interface Row { id: string; deviceId: string; photoId: string; deviceName: string; receivedAt: string; capturedAt: string; bytes: number; hash: string; width: number; height: number; filename: string; filepath: string; temporary: string; status: string; }
+interface Row { id: string; deviceId: string; photoId: string; deviceName: string; receivedAt: string; capturedAt: string; bytes: number; hash: string; width: number; height: number; filename: string; filepath: string; temporary: string; status: string; originalBytes: number; originalHash: string; revision: number; }
 
 export class Receiver extends EventEmitter {
   readonly power: PowerControl;
@@ -35,6 +35,7 @@ export class Receiver extends EventEmitter {
   private expiresAt = 0;
   private active = false;
   private deletion?: Promise<void>;
+  private rotation?: Promise<void>;
   private thumbnailJobs = new Map<string, Promise<Buffer | undefined>>();
   private stopping = false;
   private failureWindow = { start: Date.now(), count: 0 };
@@ -58,7 +59,12 @@ export class Receiver extends EventEmitter {
     this.db = new DatabaseSync(path.join(this.dataDirectory, 'receiver.sqlite'));
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS photos (id TEXT PRIMARY KEY, deviceId TEXT NOT NULL, photoId TEXT NOT NULL, deviceName TEXT NOT NULL, receivedAt TEXT NOT NULL, capturedAt TEXT NOT NULL, bytes INTEGER NOT NULL, hash TEXT NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, filename TEXT NOT NULL, filepath TEXT NOT NULL, temporary TEXT NOT NULL, status TEXT NOT NULL, UNIQUE(deviceId, photoId));`);
+      CREATE TABLE IF NOT EXISTS photos (id TEXT PRIMARY KEY, deviceId TEXT NOT NULL, photoId TEXT NOT NULL, deviceName TEXT NOT NULL, receivedAt TEXT NOT NULL, capturedAt TEXT NOT NULL, bytes INTEGER NOT NULL, hash TEXT NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, filename TEXT NOT NULL, filepath TEXT NOT NULL, temporary TEXT NOT NULL, status TEXT NOT NULL, originalBytes INTEGER NOT NULL DEFAULT 0, originalHash TEXT NOT NULL DEFAULT '', revision INTEGER NOT NULL DEFAULT 0, UNIQUE(deviceId, photoId));`);
+    const columns = this.db.prepare('PRAGMA table_info(photos)').all() as { name: string }[];
+    if (!columns.some(column => column.name === 'originalBytes')) {
+      this.db.exec("ALTER TABLE photos ADD COLUMN originalBytes INTEGER NOT NULL DEFAULT 0; ALTER TABLE photos ADD COLUMN originalHash TEXT NOT NULL DEFAULT ''; ALTER TABLE photos ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;");
+    }
+    this.db.exec("UPDATE photos SET originalBytes=bytes,originalHash=hash WHERE originalHash=''");
     this.db.exec('CREATE TABLE IF NOT EXISTS diagnostics (id INTEGER PRIMARY KEY, time TEXT NOT NULL, event TEXT NOT NULL)');
     this.files = new FileReceiver(this.dataDirectory, this.fileDirectory, () => this.emit('change')); await this.files.initialize();
     this.messages = new MessageReceiver(this.dataDirectory, () => this.emit('change'), text => this.emit('copy-text', text));
@@ -112,7 +118,7 @@ export class Receiver extends EventEmitter {
     this.directory = directory; this.setSetting('directory', directory); this.error = null; this.emit('change');
   }
   deviceIdentity() { return this.device?.id; }
-  photos(): Photo[] { return this.db.prepare("SELECT id,photoId,deviceName,receivedAt,capturedAt,bytes,width,height,filename FROM photos WHERE status IN ('ready','deleting') ORDER BY receivedAt DESC LIMIT 500").all() as unknown as Photo[]; }
+  photos(): Photo[] { return this.db.prepare("SELECT id,photoId,deviceName,receivedAt,capturedAt,bytes,width,height,filename,revision FROM photos WHERE status IN ('ready','deleting') ORDER BY receivedAt DESC LIMIT 500").all() as unknown as Photo[]; }
   photoPath(id: string) { return (this.db.prepare("SELECT filepath FROM photos WHERE id=? AND status='ready'").get(id) as { filepath: string } | undefined)?.filepath; }
   thumbnail(id: string): Promise<Buffer | undefined> {
     const current = this.thumbnailJobs.get(id); if (current) return current;
@@ -151,6 +157,36 @@ export class Receiver extends EventEmitter {
     await rm(row.filepath, { force: true });
     await rm(path.join(this.dataDirectory, 'thumbnails', row.id + '.jpg'), { force: true });
     this.db.prepare('DELETE FROM photos WHERE id=?').run(row.id);
+  }
+  async rotatePhoto(id: unknown, direction: unknown): Promise<void> {
+    if (typeof id !== 'string' || !UUID.test(id)) throw new Error('无效的照片');
+    if (direction !== 'left' && direction !== 'right') throw new Error('无效的旋转方向');
+    if (this.active || this.stopping) throw new Error('正在接收或处理照片，请稍后再旋转');
+    this.active = true;
+    this.rotation = (async () => {
+      const row = this.db.prepare("SELECT * FROM photos WHERE id=? AND status='ready'").get(id) as unknown as Row | undefined;
+      if (!row) throw new Error('照片不存在');
+      const angle = direction === 'left' ? -90 : 90;
+      const format = row.filepath.toLowerCase().endsWith('.png') ? 'png' : 'jpeg';
+      const temporary = `${row.filepath}.rotate-${randomUUID()}`;
+      try {
+        const rotated = sharp(row.filepath, { limitInputPixels: 60_000_000 }).rotate().rotate(angle);
+        const buffer = format === 'png' ? await rotated.png().toBuffer() : await rotated.jpeg({ quality: 95 }).toBuffer();
+        const metadata = await sharp(buffer, { limitInputPixels: 60_000_000, failOn: 'warning' }).metadata();
+        if (!metadata.width || !metadata.height) throw new Error('无效图片');
+        await writeFile(temporary, buffer, { flag: 'wx', flush: true });
+        await rename(temporary, row.filepath);
+        this.db.prepare('UPDATE photos SET width=?,height=?,bytes=?,hash=?,revision=revision+1 WHERE id=?').run(metadata.width, metadata.height, buffer.length, digest(buffer), id);
+        await this.thumbnailJobs.get(id)?.catch(() => undefined);
+        await rm(path.join(this.dataDirectory, 'thumbnails', id + '.jpg'), { force: true });
+        this.error = null;
+        this.emit('change');
+      } catch (error) {
+        await rm(temporary, { force: true });
+        throw error;
+      }
+    })();
+    try { await this.rotation; } finally { this.active = false; this.rotation = undefined; }
   }
   private async recover() {
     for (const row of this.db.prepare("SELECT * FROM photos WHERE status='deleting'").all() as unknown as Row[]) {
@@ -250,10 +286,10 @@ export class Receiver extends EventEmitter {
     if (typeof hash !== 'string' || !/^[0-9a-f]{64}$/.test(hash)) throw new ApiError(400, 'INVALID_HASH');
     if (typeof capturedAt !== 'string' || capturedAt.length > 40 || !Number.isFinite(Date.parse(capturedAt))) throw new ApiError(400, 'INVALID_CAPTURE_TIME');
     if (pasteAfterReceive !== undefined && pasteAfterReceive !== '0' && pasteAfterReceive !== '1') throw new ApiError(400, 'INVALID_PASTE_REQUEST');
-    if (existing && (existing.hash !== hash || existing.bytes !== bytes)) throw new ApiError(409, 'PHOTO_ID_CONFLICT');
+    if (existing && (existing.originalHash !== hash || existing.originalBytes !== bytes)) throw new ApiError(409, 'PHOTO_ID_CONFLICT');
     if (existing) {
       const file = await readFile(existing.filepath);
-      if (file.length !== bytes || digest(file) !== hash) throw new ApiError(409, 'SAVED_FILE_CHANGED');
+      if (file.length !== existing.bytes || digest(file) !== existing.hash) throw new ApiError(409, 'SAVED_FILE_CHANGED');
       req.resume(); this.reply(res, 200, { id: existing.id, receivedAt: existing.receivedAt, duplicate: true }); return;
     }
     const id = randomUUID(); const receivedAt = new Date().toISOString();
@@ -263,7 +299,7 @@ export class Receiver extends EventEmitter {
     let committed = false; let journaled = false;
     try {
       // Journal before streaming so an interrupted upload can be cleaned on restart.
-      this.db.prepare('INSERT INTO photos VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id, device.id, photoId, device.name, receivedAt, capturedAt, bytes, hash, 0, 0, filename, filepath, temporary, 'pending'); journaled = true;
+      this.db.prepare('INSERT INTO photos VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id, device.id, photoId, device.name, receivedAt, capturedAt, bytes, hash, 0, 0, filename, filepath, temporary, 'pending', bytes, hash, 0); journaled = true;
       let count = 0; const hasher = createHash('sha256');
       const meter = new Transform({ transform(chunk, _encoding, done) { count += chunk.length; if (count > bytes || count > MAX_BYTES) { done(new ApiError(413, 'FILE_TOO_LARGE')); return; } hasher.update(chunk); done(null, chunk); } });
       await pipeline(req, meter, createWriteStream(temporary, { flags: 'wx', flush: true }));
@@ -287,6 +323,7 @@ export class Receiver extends EventEmitter {
     this.power.dispose();
     this.stopping = true;
     await this.deletion?.catch(() => undefined);
+    await this.rotation?.catch(() => undefined);
     if (this.server) await new Promise<void>(resolve => this.server!.close(() => resolve()));
     this.port = 0; this.outgoing?.close(); this.messages?.close(); this.files?.close(); this.db?.close();
   }

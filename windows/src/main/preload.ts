@@ -9,6 +9,7 @@ const api: DesktopAPI = {
   chooseFilesDirectory: () => ipcRenderer.invoke('choose-files-directory'), openFilesDirectory: () => ipcRenderer.invoke('open-files-directory'), openFile: id => ipcRenderer.invoke('open-file', id), revealFile: id => ipcRenderer.invoke('reveal-file', id),
   copyPairing: () => ipcRenderer.invoke('copy-pairing'), exportDiagnostics: () => ipcRenderer.invoke('export-diagnostics'),
   deletePhotos: ids => ipcRenderer.invoke('delete-photos', ids),
+  rotatePhoto: (id, direction) => ipcRenderer.invoke('rotate-photo', id, direction),
   saveCrop: (id, region) => ipcRenderer.invoke("save-crop", id, region),
   copyCrop: (id, region) => ipcRenderer.invoke('copy-crop', id, region),
   state: () => ipcRenderer.invoke('state'), chooseDirectory: () => ipcRenderer.invoke('choose-directory'),

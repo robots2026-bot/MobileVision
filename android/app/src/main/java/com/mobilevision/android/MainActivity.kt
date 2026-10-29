@@ -96,7 +96,7 @@ fun MobileVisionScreen(vm: PhotoViewModel, shareRequest: Int = 0) {
     var pendingPair by remember { mutableStateOf<String?>(null) }; var confirmation by remember { mutableStateOf("") }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { permission = it; cameraError = if (it) "" else "需要相机权限才能扫码和拍照" }
     val filesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> vm.importFiles(uris) }
-    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let(vm::importPhoto) }
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris -> vm.importPhotos(uris) }
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val writingFullScreen = writing && writingLandscape && LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     LaunchedEffect(shareRequest) {

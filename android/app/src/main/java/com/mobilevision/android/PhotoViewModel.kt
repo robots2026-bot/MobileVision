@@ -152,32 +152,44 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
             finally { mutable.value = mutable.value.copy(capturing = false) }
         } } catch (_: java.util.concurrent.RejectedExecutionException) { /* Recovered on next launch. */ }
     }
-    fun importPhoto(uri: Uri) {
+    fun importPhotos(uris: List<Uri>) {
+        if (uris.isEmpty()) return
         if (mutable.value.capturing) return
         mutable.value = mutable.value.copy(capturing = true)
         worker.execute {
-            var id: String? = null
+            var imported = 0
+            var failures = 0
+            var lastError = ""
             try {
                 val target = session ?: throw IllegalStateException("请先连接电脑")
-                id = UUID.randomUUID().toString()
-                store.create(id, target.computerId, Instant.now().toString())
-                val temporary = store.temporary(id)
-                getApplication<Application>().contentResolver.openInputStream(uri)?.use { input ->
-                    FileOutputStream(temporary).use { output ->
-                        copyImageWithLimit(input, output, 50L * 1024 * 1024)
-                        output.fd.sync()
+                uris.forEach { uri ->
+                    var id: String? = null
+                    try {
+                        id = UUID.randomUUID().toString()
+                        store.create(id, target.computerId, Instant.now().toString())
+                        val temporary = store.temporary(id)
+                        getApplication<Application>().contentResolver.openInputStream(uri)?.use { input ->
+                            FileOutputStream(temporary).use { output ->
+                                copyImageWithLimit(input, output, 50L * 1024 * 1024)
+                                output.fd.sync()
+                            }
+                        } ?: throw IOException("无法读取所选图片")
+                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        BitmapFactory.decodeFile(temporary.path, bounds)
+                        if (bounds.outWidth <= 0 || bounds.outHeight <= 0 || bounds.outWidth.toLong() * bounds.outHeight > 60_000_000) throw IOException("图片损坏或尺寸过大")
+                        if (bounds.outMimeType != "image/jpeg") convertToJpeg(temporary)
+                        if (!validPhoto(temporary)) throw IOException("图片损坏或格式不支持")
+                        check(temporary.renameTo(store.file(id))) { "无法保存导入图片" }
+                        store.update(id, "pending", hash = fileHash(store.file(id)))
+                        imported++
+                    } catch (error: Exception) {
+                        id?.let { photoId -> store.temporary(photoId).delete(); store.update(photoId, "capture_failed", error = "导入未完成，请重新选择") }
+                        failures++
+                        lastError = error.message ?: "导入失败"
                     }
-                } ?: throw IOException("无法读取所选图片")
-                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeFile(temporary.path, bounds)
-                if (bounds.outWidth <= 0 || bounds.outHeight <= 0 || bounds.outWidth.toLong() * bounds.outHeight > 60_000_000) throw IOException("图片损坏或尺寸过大")
-                if (bounds.outMimeType != "image/jpeg") convertToJpeg(temporary)
-                if (!validPhoto(temporary)) throw IOException("图片损坏或格式不支持")
-                check(temporary.renameTo(store.file(id))) { "无法保存导入图片" }
-                store.update(id, "pending", hash = fileHash(store.file(id)))
-                publish("图片已导入，等待电脑确认")
+                }
+                publish("已导入 $imported 张图片" + if (failures > 0) "，$failures 张失败：$lastError" else "，等待电脑确认")
             } catch (error: Exception) {
-                id?.let { photoId -> store.temporary(photoId).delete(); store.update(photoId, "capture_failed", error = "导入未完成，请重新选择") }
                 publish(userMessage(error))
             } finally { mutable.value = mutable.value.copy(capturing = false) }
         }

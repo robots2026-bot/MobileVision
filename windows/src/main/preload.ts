@@ -15,6 +15,7 @@ const api: DesktopAPI = {
   state: () => ipcRenderer.invoke('state'), chooseDirectory: () => ipcRenderer.invoke('choose-directory'),
   refreshPairing: () => ipcRenderer.invoke('refresh-pairing'), selectAddress: address => ipcRenderer.invoke('select-address', address),
   revoke: () => ipcRenderer.invoke('revoke'), openDirectory: () => ipcRenderer.invoke('open-directory'),
+  chooseCropDirectory: () => ipcRenderer.invoke('choose-crop-directory'), openCropDirectory: () => ipcRenderer.invoke('open-crop-directory'),
   revealPhoto: id => ipcRenderer.invoke('reveal-photo', id),
   onChange: callback => { const listener = () => callback(); ipcRenderer.on('changed', listener); return () => ipcRenderer.removeListener('changed', listener); }
 };

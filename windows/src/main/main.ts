@@ -23,6 +23,12 @@ let win: BrowserWindow | undefined; let receiver: Receiver | undefined; let clos
 let tray: Tray | undefined; let trayMenu: Menu | undefined; let quitting = false;
 const uiPath = path.join(__dirname, '../renderer/index.html');
 
+function timestamp() {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+}
+
 function windowThemeColors() { return nativeTheme.shouldUseDarkColors ? { color: '#171d27', symbolColor: '#bfcbdd', background: '#11151c' } : { color: '#fbfcfe', symbolColor: '#536178', background: '#f4f6f9' }; }
 nativeTheme.themeSource = 'system';
 nativeTheme.on('updated', () => {
@@ -43,7 +49,7 @@ async function enqueueFiles(value: unknown) {
 async function state(): Promise<DesktopState> {
   const list = addresses(); if (!list.includes(selectedAddress)) selectedAddress = list[0] || '127.0.0.1';
   const pair = receiver!.pairing(selectedAddress);
-  return { power: receiver!.power.status(), directory: receiver!.directory, addresses: list, selectedAddress, port: receiver!.port, running: receiver!.port > 0, pairing: { qr: await QRCode.toDataURL(JSON.stringify(pair), { width: 260, margin: 2, errorCorrectionLevel: 'M' }), expiresAt: pair.expiresAt }, device: receiver!.getDevice(), messages: receiver!.messages.list(), filesDirectory: receiver!.files.directory, files: [...receiver!.files.list(), ...receiver!.outgoing.list()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 500), photos: receiver!.photos(), error: receiver!.error };
+  return { power: receiver!.power.status(), directory: receiver!.directory, cropDirectory: receiver!.cropDirectory, addresses: list, selectedAddress, port: receiver!.port, running: receiver!.port > 0, pairing: { qr: await QRCode.toDataURL(JSON.stringify(pair), { width: 260, margin: 2, errorCorrectionLevel: 'M' }), expiresAt: pair.expiresAt }, device: receiver!.getDevice(), messages: receiver!.messages.list(), filesDirectory: receiver!.files.directory, files: [...receiver!.files.list(), ...receiver!.outgoing.list()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 500), photos: receiver!.photos(), error: receiver!.error };
 }
 function handler(name: string, callback: (...args: any[]) => any) {
   ipcMain.handle(name, (event, ...args) => {
@@ -111,10 +117,13 @@ if (single) app.whenReady().then(async () => {
     if (typeof id !== 'string') throw new Error('无效照片');
     const filename = receiver!.photoPath(id); if (!filename) throw new Error('照片不存在');
     const bytes = await cropPhoto(filename, region);
-    const result = await dialog.showSaveDialog(win!, { title: '保存照片截图', defaultPath: path.join(path.dirname(filename), path.basename(filename, path.extname(filename)) + '-截图.png'), filters: [{ name: 'PNG 图片', extensions: ['png'] }] });
-    if (result.canceled || !result.filePath) return null;
-    if (path.resolve(result.filePath).toLowerCase() === path.resolve(filename).toLowerCase()) throw new Error('截图不能覆盖原照片');
-    await writeFile(result.filePath, bytes); return result.filePath;
+    const directory = receiver!.cropDirectory; await mkdir(directory, { recursive: true });
+    const stamp = timestamp(); let counter = 0;
+    while (true) {
+      const filePath = path.join(directory, counter === 0 ? `${stamp}.png` : `${stamp}-${counter}.png`);
+      try { await writeFile(filePath, bytes, { flag: 'wx' }); return filePath; }
+      catch (error: any) { if (error.code !== 'EEXIST') throw error; counter++; }
+    }
   });
   handler('rotate-photo', async (id: unknown, direction: unknown) => {
     if (typeof id !== 'string' || (direction !== 'left' && direction !== 'right')) throw new Error('无效的旋转操作');
@@ -133,6 +142,7 @@ if (single) app.whenReady().then(async () => {
     if (!result.canceled && result.filePath) await writeFile(result.filePath, JSON.stringify({ version: app.getVersion(), platform: process.platform, ...receiver!.diagnostics() }, null, 2));
   });
   handler('choose-directory', async () => { const result = await dialog.showOpenDialog(win!, { properties: ['openDirectory', 'createDirectory'] }); if (!result.canceled) await receiver!.setDirectory(result.filePaths[0]); });
+  handler('choose-crop-directory', async () => { const result = await dialog.showOpenDialog(win!, { properties: ['openDirectory', 'createDirectory'] }); if (!result.canceled) await receiver!.setCropDirectory(result.filePaths[0]); });
   handler('send-file-paths', (value: unknown) => enqueueFiles(value));
   handler('paste-files', async () => { if (!receiver!.deviceIdentity()) throw new Error('请先配对手机'); await enqueueFiles(await clipboardFilePaths()); });
   handler('send-files', async () => { if (!receiver!.deviceIdentity()) throw new Error('请先配对手机'); const result = await dialog.showOpenDialog(win!, { title: '发送文件到手机', properties: ['openFile', 'multiSelections'] }); if (!result.canceled) await enqueueFiles(result.filePaths); });
@@ -145,6 +155,7 @@ if (single) app.whenReady().then(async () => {
   handler('select-address', (address: unknown) => { if (typeof address !== 'string' || !addresses().includes(address)) throw new Error('无效网卡地址'); selectedAddress = address; receiver!.refreshPairing(); });
   handler('revoke', async () => { const result = await dialog.showMessageBox(win!, { type: 'question', message: '解除手机配对？', detail: '解除后，手机需要重新扫码才能继续上传。已接收的照片会保留。', buttons: ['取消', '解除配对'], defaultId: 0, cancelId: 0 }); if (result.response === 1) receiver!.revoke(); });
   handler('open-directory', async () => { const error = await shell.openPath(receiver!.directory); if (error) throw new Error(error); });
+  handler('open-crop-directory', async () => { const error = await shell.openPath(receiver!.cropDirectory); if (error) throw new Error(error); });
   handler('reveal-photo', (id: unknown) => { if (typeof id !== 'string') throw new Error('无效照片'); const filename = receiver!.photoPath(id); if (!filename) throw new Error('照片不存在'); shell.showItemInFolder(filename); });
   const mainWindow = await createMainWindow(!testing);
   if (!testing || traySmoke) await createTray();

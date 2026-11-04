@@ -116,6 +116,7 @@ footer { flex-shrink: 0; padding: 7px 22px 10px; }
 .photo-storage { position: relative; }
 .photo-storage summary { border: 1px solid var(--border); border-radius: 7px; background: var(--surface); padding: 8px 12px; }
 .storage-panel { position: absolute; z-index: 5; right: 0; top: calc(100% + 8px); width: 320px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; box-shadow: 0 8px 24px #243c6620; }
+.storage-panel .crop-storage { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
 @media (max-width: 1100px) { .full-workspace { display: flex; } }
 
 /* One compact bar includes native Windows caption controls. */

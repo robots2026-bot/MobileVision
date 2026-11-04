@@ -43,11 +43,12 @@ export class Receiver extends EventEmitter {
   public fingerprint = '';
   public certificate = '';
   public directory: string;
+  public cropDirectory: string;
   public error: string | null = null;
   public readonly computerId: string;
 
   constructor(public readonly dataDirectory: string, directory: string, private bindHost = '0.0.0.0', private fileDirectory = path.join(directory, 'files'), powerExecutor = executePower) {
-    super(); this.directory = directory; this.computerId = ''; this.power = new PowerControl(() => this.emit('change'), powerExecutor);
+    super(); this.directory = directory; this.cropDirectory = directory; this.computerId = ''; this.power = new PowerControl(() => this.emit('change'), powerExecutor);
   }
 
   outgoing!: OutgoingFiles;
@@ -72,6 +73,7 @@ export class Receiver extends EventEmitter {
     this.record('STARTING');
     const savedDirectory = this.setting('directory');
     if (savedDirectory) this.directory = savedDirectory;
+    this.cropDirectory = this.setting('cropDirectory') || this.directory;
     Object.defineProperty(this, 'computerId', { value: this.setting('computerId') || randomUUID() });
     this.setSetting('computerId', this.computerId);
     const savedDevice = this.setting('device');
@@ -116,6 +118,11 @@ export class Receiver extends EventEmitter {
     if (this.active) throw new Error('正在接收照片，请完成后再切换目录');
     await mkdir(directory, { recursive: true }); await access(directory, constants.W_OK);
     this.directory = directory; this.setSetting('directory', directory); this.error = null; this.emit('change');
+  }
+  async setCropDirectory(directory: string) {
+    if (this.active) throw new Error('正在接收照片，请完成后再切换目录');
+    await mkdir(directory, { recursive: true }); await access(directory, constants.W_OK);
+    this.cropDirectory = directory; this.setSetting('cropDirectory', directory); this.error = null; this.emit('change');
   }
   deviceIdentity() { return this.device?.id; }
   photos(): Photo[] { return this.db.prepare("SELECT id,photoId,deviceName,receivedAt,capturedAt,bytes,width,height,filename,revision FROM photos WHERE status IN ('ready','deleting') ORDER BY receivedAt DESC LIMIT 500").all() as unknown as Photo[]; }
